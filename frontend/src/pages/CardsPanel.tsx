@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -38,6 +38,10 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
   const [jobError, setJobError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Fix C1 — stable ref so the polling closure never captures a stale documentId
+  const documentIdRef = useRef(documentId);
+  useEffect(() => { documentIdRef.current = documentId; }, [documentId]);
+
   // ── Card list state ────────────────────────────────────────────────────────
   const [cards, setCards] = useState<Card[]>([]);
   const [cardsLoading, setCardsLoading] = useState(false);
@@ -49,17 +53,25 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
   const [editFrontHtml, setEditFrontHtml] = useState('');
   const [editTags, setEditTags] = useState('');
 
+  // Fix I4 — action error state for reject / save failures
+  const [actionError, setActionError] = useState<string | null>(null);
+
   // ── Load rule sets and models once ────────────────────────────────────────
+  // Fix I3 — add .catch(console.error) so mount errors surface in the console
   useEffect(() => {
-    getRuleSets().then((sets) => {
-      setRuleSets(sets);
-      const def = sets.find((s) => s.is_default) ?? sets[0];
-      if (def) setSelectedRuleSetId(def.id);
-    });
-    getModels().then((ms) => {
-      setModels(ms);
-      if (ms.length > 0) setSelectedModel(ms[0].id);
-    });
+    getRuleSets()
+      .then((sets) => {
+        setRuleSets(sets);
+        const def = sets.find((s) => s.is_default) ?? sets[0];
+        if (def) setSelectedRuleSetId(def.id);
+      })
+      .catch(console.error);
+    getModels()
+      .then((ms) => {
+        setModels(ms);
+        if (ms.length > 0) setSelectedModel(ms[0].id);
+      })
+      .catch(console.error);
   }, []);
 
   // ── Fetch cards ────────────────────────────────────────────────────────────
@@ -92,6 +104,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
     setEditingId(null);
     setNeedsReviewOnly(false);
     setStatusFilter('all');
+    setActionError(null);
 
     if (documentId != null) {
       fetchCards(documentId);
@@ -128,6 +141,8 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
   // ── Start generation ───────────────────────────────────────────────────────
   async function handleGenerate() {
     if (documentId == null || selectedRuleSetId == null || !selectedModel) return;
+    // Fix S1 — clear stale estimate when a new generation starts
+    setEstimate(null);
     setJobError(null);
     setJobRunning(true);
     setJobProgress(null);
@@ -141,6 +156,8 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
 
       const jobId = resp.job_id;
 
+      // Fix C2 — guard against double-start of interval
+      if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = setInterval(async () => {
         try {
           const job = await getGenerationJob(jobId);
@@ -150,7 +167,8 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
             clearInterval(intervalRef.current!);
             intervalRef.current = null;
             setJobRunning(false);
-            fetchCards(documentId);
+            // Fix C1 — use ref so closure always sees the latest documentId
+            fetchCards(documentIdRef.current!);
           } else if (job.status === 'failed') {
             clearInterval(intervalRef.current!);
             intervalRef.current = null;
@@ -178,30 +196,34 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
     setEstimate(null);
   }
 
-  // ── Reject card ────────────────────────────────────────────────────────────
-  async function handleReject(id: number) {
+  // Fix C3/I1 — wrap handlers in useCallback so columns memo dep array is stable
+
+  // Fix I4 — handleReject surfaces errors via actionError
+  const handleReject = useCallback(async (id: number) => {
     if (documentId == null) return;
+    setActionError(null);
     try {
       await rejectCard(id);
       fetchCards(documentId);
-    } catch {
-      // silently fail
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to reject card');
     }
-  }
+  }, [documentId, fetchCards]);
 
-  // ── Inline edit ────────────────────────────────────────────────────────────
-  function startEdit(card: Card) {
+  const startEdit = useCallback((card: Card) => {
     setEditingId(card.id);
     setEditFrontHtml(card.front_html);
     setEditTags(card.tags.join(', '));
-  }
+  }, []);
 
-  function cancelEdit() {
+  const cancelEdit = useCallback(() => {
     setEditingId(null);
-  }
+  }, []);
 
-  async function saveEdit(id: number) {
+  // Fix I4 — saveEdit surfaces errors via actionError
+  const saveEdit = useCallback(async (id: number) => {
     if (documentId == null) return;
+    setActionError(null);
     try {
       await updateCard(id, {
         front_html: editFrontHtml,
@@ -209,20 +231,23 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
       });
       setEditingId(null);
       fetchCards(documentId);
-    } catch {
-      // silently fail
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to save card');
     }
-  }
+  }, [documentId, editFrontHtml, editTags, fetchCards]);
 
-  // ── Filtered cards ─────────────────────────────────────────────────────────
-  const filteredCards = cards.filter((c) => {
-    if (needsReviewOnly && !c.needs_review) return false;
-    if (statusFilter !== 'all' && c.status !== statusFilter) return false;
-    return true;
-  });
+  // Fix I2 — memoize filteredCards
+  const filteredCards = useMemo(
+    () => cards.filter((c) => {
+      if (needsReviewOnly && !c.needs_review) return false;
+      if (statusFilter !== 'all' && c.status !== statusFilter) return false;
+      return true;
+    }),
+    [cards, needsReviewOnly, statusFilter],
+  );
 
-  // ── Table columns ──────────────────────────────────────────────────────────
-  const columns = [
+  // Fix C3/I1 — memoize columns so TanStack Table only rebuilds when inputs change
+  const columns = useMemo(() => [
     columnHelper.accessor('card_number', {
       header: '#',
       size: 40,
@@ -346,7 +371,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
         );
       },
     }),
-  ];
+  ], [editingId, editFrontHtml, editTags, saveEdit, cancelEdit, startEdit, handleReject]);
 
   const table = useReactTable({
     data: filteredCards,
@@ -501,6 +526,13 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
             Export
           </button>
         </div>
+
+        {/* Fix I4 — action error banner (reject / save failures) */}
+        {actionError && (
+          <div className="px-4 py-1.5 text-xs text-red-600 bg-red-50 border-b border-red-100">
+            {actionError}
+          </div>
+        )}
 
         {/* Table */}
         <div className="flex-1 overflow-auto">
