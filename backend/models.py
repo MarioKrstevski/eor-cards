@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from sqlalchemy import String, Text, Boolean, Integer, Float, JSON, ForeignKey, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -6,7 +6,7 @@ from backend.db import Base
 import enum
 
 def utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.utcnow()
 
 class RuleSet(Base):
     __tablename__ = "rule_sets"
@@ -99,3 +99,4 @@ class GenerationJob(Base):
     started_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     document: Mapped["Document"] = relationship("Document", back_populates="jobs")
+    rule_set: Mapped["RuleSet"] = relationship("RuleSet")
