@@ -3,10 +3,13 @@
 import base64
 import io
 import json
+import logging
 import os
 import re
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 import anthropic
 from docx import Document
@@ -62,7 +65,7 @@ def extract_images_from_paragraph(para, doc, img_dir, doc_prefix, para_idx):
                 "para_index": para_idx,
             })
         except Exception as e:
-            print(f"  Warning: Could not extract image {img_idx} from para {para_idx}: {e}")
+            logger.warning("Could not extract image %d from para %d: %s", img_idx, para_idx, e)
     return images
 
 
@@ -110,6 +113,7 @@ def runs_to_html(runs):
 def parse_docx(docx_path: str, img_dir: str):
     """Parse a .docx file into structured elements."""
     doc = Document(docx_path)
+    os.makedirs(img_dir, exist_ok=True)
     doc_prefix = Path(docx_path).stem.replace(" ", "_")[:40]
     elements = []
     all_images = []
@@ -328,7 +332,10 @@ def call_claude_for_chunking(elements: list, images: list, rules_md_path: Option
     if response_text.startswith("```"):
         response_text = re.sub(r"^```\w*\n?", "", response_text)
         response_text = re.sub(r"\n?```$", "", response_text)
-    return json.loads(response_text)
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Claude returned non-JSON chunking response: {e}\nResponse: {response_text[:200]}") from e
 
 
 def assemble_chunks(elements: list, claude_chunks: list) -> list:
@@ -387,13 +394,16 @@ def assemble_chunks(elements: list, claude_chunks: list) -> list:
 
 def strip_images_for_storage(chunks: list[dict]) -> list[dict]:
     """Replace inline base64 data URIs in source_html with placeholder text."""
+    result = []
     for chunk in chunks:
-        chunk["source_html"] = re.sub(
+        new_chunk = dict(chunk)
+        new_chunk["source_html"] = re.sub(
             r'<img src="data:[^"]+base64,[^"]*"',
             '<img src="[image]"',
             chunk.get("source_html", "")
         )
-    return chunks
+        result.append(new_chunk)
+    return result
 
 
 def heuristic_chunk(elements: list) -> list:
