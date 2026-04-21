@@ -1,4 +1,5 @@
 import os
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -6,6 +7,7 @@ from typing import Optional
 from backend.db import get_db
 from backend.models import Document, Chunk, Curriculum
 from backend.config import DATA_DIR, ANTHROPIC_API_KEY
+from backend.services.chunker import parse_and_chunk_docx
 import anthropic
 
 router = APIRouter()
@@ -72,15 +74,22 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         raise HTTPException(422, "Only .docx files supported")
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    save_path = os.path.join(UPLOAD_DIR, file.filename)
+    # Prefix with uuid to avoid filename collisions
+    stem, ext = os.path.splitext(file.filename)
+    unique_filename = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
+    save_path = os.path.join(UPLOAD_DIR, unique_filename)
     with open(save_path, "wb") as f:
         f.write(await file.read())
 
-    from backend.services.chunker import parse_and_chunk_docx
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     img_dir = os.path.join(DATA_DIR, "chunk_images")
+    os.makedirs(img_dir, exist_ok=True)
 
-    chunks_data = parse_and_chunk_docx(save_path, img_dir, client)
+    try:
+        chunks_data = parse_and_chunk_docx(save_path, img_dir, client)
+    except Exception as e:
+        os.remove(save_path)
+        raise HTTPException(500, f"Failed to process document: {e}") from e
 
     suggested_curriculum_id = _suggest_topic(file.filename, db)
     topic_path = None
@@ -89,7 +98,7 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         topic_path = node.path if node else None
 
     doc = Document(
-        filename=file.filename,
+        filename=unique_filename,
         original_name=file.filename,
         curriculum_id=suggested_curriculum_id,
         topic_path=topic_path,
