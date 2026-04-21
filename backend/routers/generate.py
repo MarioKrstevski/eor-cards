@@ -1,14 +1,16 @@
-from datetime import datetime
+import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db, SessionLocal
-from backend.models import Document, Chunk, Card, GenerationJob, JobStatus, CardStatus, RuleSet
+from backend.models import Document, Chunk, Card, GenerationJob, JobStatus, CardStatus, RuleSet, utcnow
 from backend.services.generator import generate_cards_for_chunk
 from backend.services.cost_estimator import estimate_cost
 from backend.config import MODELS, DEFAULT_MODEL, ANTHROPIC_API_KEY
 import anthropic
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -149,12 +151,17 @@ def _run_generation(
         doc = db.get(Document, document_id)
         tags = doc.topic_path.split(" > ") if doc and doc.topic_path else []
         total_cards = 0
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         for chunk_id in chunk_ids:
             chunk = db.get(Chunk, chunk_id)
             if not chunk:
+                logger.warning("Chunk %d not found during generation job %d, skipping", chunk_id, job_id)
+                job.processed_chunks += 1
+                db.commit()
                 continue
-            cards_data, needs_review = generate_cards_for_chunk(
+            cards_data, needs_review, usage = generate_cards_for_chunk(
                 client,
                 {"source_text": chunk.source_text, "heading": chunk.heading},
                 rules_text,
@@ -173,20 +180,27 @@ def _run_generation(
                 db.add(card)
             chunk.card_count = len(cards_data)
             total_cards += len(cards_data)
+            total_input_tokens += usage["input_tokens"]
+            total_output_tokens += usage["output_tokens"]
             job.processed_chunks += 1
             db.commit()
 
         job.status = JobStatus.done
         job.total_cards = total_cards
-        job.finished_at = datetime.utcnow()
+        job.actual_input_tokens = total_input_tokens
+        job.actual_output_tokens = total_output_tokens
+        job.finished_at = utcnow()
         db.commit()
 
     except Exception as e:
-        job = db.get(GenerationJob, job_id)
-        if job:
-            job.status = JobStatus.failed
-            job.error_message = str(e)
-            job.finished_at = datetime.utcnow()
-            db.commit()
+        try:
+            job = db.get(GenerationJob, job_id)
+            if job:
+                job.status = JobStatus.failed
+                job.error_message = str(e)
+                job.finished_at = utcnow()
+                db.commit()
+        except Exception:
+            logger.exception("Failed to write error status for job %d", job_id)
     finally:
         db.close()

@@ -45,11 +45,11 @@ def generate_cards_for_chunk(
     chunk: dict,
     rules_text: str,
     model: str = DEFAULT_MODEL,
-) -> tuple[list[dict], bool]:
+) -> tuple[list[dict], bool, dict]:
     """Generate cards for a single chunk using Claude.
 
-    Returns (cards, needs_review).
-    cards is a list of dicts with: card_number, front_html, front_text
+    Returns (cards, needs_review, usage) where usage is
+    {"input_tokens": int, "output_tokens": int}.
     """
     prompt = f"""{rules_text}
 
@@ -75,4 +75,8 @@ Remember: card N uses only cN for all clozes."""
     )
     raw = response.content[0].text.strip()
     cards, needs_review = parse_card_output(raw)
-    return cards, needs_review
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+    return cards, needs_review, usage
