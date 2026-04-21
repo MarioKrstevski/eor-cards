@@ -250,8 +250,8 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
   const columns = useMemo(() => [
     columnHelper.accessor('card_number', {
       header: '#',
-      size: 40,
-      cell: (info) => <span className="text-gray-500">{info.getValue()}</span>,
+      size: 32,
+      cell: (info) => <span className="text-xs text-gray-400 tabular-nums">{info.getValue()}</span>,
     }),
     columnHelper.accessor('front_text', {
       header: 'Front',
@@ -260,14 +260,14 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
         if (editingId === card.id) {
           return (
             <textarea
-              className="w-full text-xs border border-gray-300 rounded px-2 py-1 resize-y min-h-[60px] focus:outline-none focus:ring-1 focus:ring-purple-400"
+              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 resize-y min-h-[60px] focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
               value={editFrontHtml}
               onChange={(e) => setEditFrontHtml(e.target.value)}
             />
           );
         }
         return (
-          <span className="block truncate max-w-xs text-gray-800" title={info.getValue()}>
+          <span className="block text-sm text-gray-800 whitespace-normal break-words">
             {info.getValue()}
           </span>
         );
@@ -275,23 +275,32 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
     }),
     columnHelper.accessor('tags', {
       header: 'Tags',
-      size: 180,
+      size: 200,
       cell: (info) => {
         const card = info.row.original;
         if (editingId === card.id) {
           return (
             <input
-              className="w-full text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-purple-400"
+              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
               value={editTags}
               onChange={(e) => setEditTags(e.target.value)}
               placeholder="tag1, tag2"
             />
           );
         }
+        const tags = info.getValue();
+        if (tags.length === 0) return null;
         return (
-          <span className="text-xs text-gray-500 truncate block">
-            {info.getValue().join(', ')}
-          </span>
+          <div className="flex flex-wrap gap-1">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
         );
       },
     }),
@@ -300,22 +309,22 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
       size: 70,
       cell: (info) =>
         info.getValue() ? (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-            Review
-          </span>
+          <span title="Needs review" className="text-yellow-500 text-base leading-none">⚠</span>
         ) : null,
     }),
     columnHelper.accessor('status', {
       header: 'Status',
-      size: 80,
+      size: 90,
       cell: (info) => {
         const v = info.getValue();
         return v === 'active' ? (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+          <span className="inline-flex items-center gap-1.5 text-xs text-green-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
             Active
           </span>
         ) : (
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+          <span className="inline-flex items-center gap-1.5 text-xs text-red-600">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-400 inline-block" />
             Rejected
           </span>
         );
@@ -324,7 +333,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
     columnHelper.display({
       id: 'actions',
       header: 'Actions',
-      size: 80,
+      size: 90,
       cell: (info) => {
         const card = info.row.original;
         if (editingId === card.id) {
@@ -332,13 +341,13 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => saveEdit(card.id)}
-                className="px-2 py-0.5 text-xs font-medium text-white bg-purple-600 rounded hover:bg-purple-700"
+                className="px-2 py-1 text-xs font-medium text-white bg-violet-600 rounded-md hover:bg-violet-700 transition-colors"
               >
                 Save
               </button>
               <button
                 onClick={cancelEdit}
-                className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 rounded hover:bg-gray-200"
+                className="px-2 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
@@ -351,7 +360,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
             <button
               onClick={() => startEdit(card)}
               title="Edit card"
-              className="p-1 text-gray-400 hover:text-purple-600 transition-colors"
+              className="p-1 text-gray-400 hover:text-violet-600 transition-colors rounded"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
@@ -361,7 +370,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
             <button
               onClick={() => handleReject(card.id)}
               title="Reject card"
-              className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+              className="p-1 text-gray-400 hover:text-red-500 transition-colors rounded"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -382,22 +391,36 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
   // ── Null state ─────────────────────────────────────────────────────────────
   if (documentId === null) {
     return (
-      <main className="flex-1 overflow-hidden flex items-center justify-center text-sm text-gray-400">
-        Select a document to view cards
+      <main className="flex-1 overflow-hidden flex flex-col items-center justify-center gap-3 bg-gray-50">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-12 w-12 text-gray-200"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={1.5}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+          />
+        </svg>
+        <p className="text-sm text-gray-400">Select a document from the sidebar to view cards</p>
       </main>
     );
   }
 
   return (
-    <main className="flex-1 overflow-hidden flex flex-col">
+    <main className="flex-1 overflow-hidden flex flex-col bg-white">
       {/* ── Section 1: Generation Controls ────────────────────────────────── */}
-      <div className="bg-gray-50 border-b border-gray-200 p-4 shrink-0">
+      <div className="bg-gray-50 border-b border-gray-200 px-5 py-3 shrink-0">
         <div className="flex items-center gap-3 flex-wrap">
           {/* Rule set selector */}
-          <div className="flex items-center gap-1.5">
-            <label className="text-xs text-gray-500 font-medium whitespace-nowrap">Rule set</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Rule set</label>
             <select
-              className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
+              className="text-sm border border-gray-300 rounded-md px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent disabled:opacity-50"
               value={selectedRuleSetId ?? ''}
               onChange={(e) => handleRuleSetChange(Number(e.target.value))}
               disabled={jobRunning}
@@ -411,10 +434,10 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
           </div>
 
           {/* Model selector */}
-          <div className="flex items-center gap-1.5">
-            <label className="text-xs text-gray-500 font-medium whitespace-nowrap">Model</label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-500 whitespace-nowrap">Model</label>
             <select
-              className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
+              className="text-sm border border-gray-300 rounded-md px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent disabled:opacity-50"
               value={selectedModel}
               onChange={(e) => handleModelChange(e.target.value)}
               disabled={jobRunning}
@@ -427,36 +450,48 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
             </select>
           </div>
 
+          {/* Divider */}
+          <div className="h-5 w-px bg-gray-200" />
+
           {/* Estimate button */}
           <button
             onClick={handleEstimate}
             disabled={jobRunning || estimating || !selectedRuleSetId || !selectedModel}
-            className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500"
           >
-            {estimating ? 'Estimating…' : 'Estimate'}
+            {estimating ? 'Estimating…' : 'Estimate cost'}
           </button>
 
           {/* Generate button */}
           <button
             onClick={handleGenerate}
             disabled={jobRunning || !selectedRuleSetId || !selectedModel}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-purple-600 border border-transparent rounded hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-white bg-violet-600 rounded-md hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-1"
           >
-            {jobRunning && (
-              <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
+            {jobRunning ? (
+              <>
+                <svg className="animate-spin h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Generating…
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Generate
+              </>
             )}
-            {jobRunning ? 'Generating…' : 'Generate'}
           </button>
 
           {/* Inline estimate result */}
           {estimate && (
-            <span className="text-xs text-gray-600">
-              ~${estimate.estimated_cost_usd.toFixed(4)}{' '}
-              (~{estimate.estimated_input_tokens.toLocaleString()} input /{' '}
-              {estimate.estimated_output_tokens.toLocaleString()} output tokens)
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+              ~${estimate.estimated_cost_usd.toFixed(4)}
+              <span className="text-green-500">·</span>
+              {estimate.estimated_input_tokens.toLocaleString()} in / {estimate.estimated_output_tokens.toLocaleString()} out tokens
             </span>
           )}
 
@@ -467,7 +502,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
 
           {/* Job progress */}
           {jobRunning && jobProgress && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-gray-500 tabular-nums">
               {jobProgress.processed}/{jobProgress.total} chunks
             </span>
           )}
@@ -482,7 +517,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
       {/* ── Section 2: Card Grid ───────────────────────────────────────────── */}
       <div className="flex-1 overflow-hidden flex flex-col">
         {/* Toolbar above table */}
-        <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-gray-100 shrink-0">
+        <div className="flex items-center justify-between gap-3 px-5 py-2.5 border-b border-gray-100 shrink-0 bg-white">
           <div className="flex items-center gap-4">
             {/* Needs review toggle */}
             <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
@@ -490,16 +525,16 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
                 type="checkbox"
                 checked={needsReviewOnly}
                 onChange={(e) => setNeedsReviewOnly(e.target.checked)}
-                className="rounded border-gray-300 text-purple-600 focus:ring-purple-400"
+                className="rounded border-gray-300 text-violet-600 focus:ring-violet-400"
               />
               Needs review only
             </label>
 
             {/* Status filter */}
             <div className="flex items-center gap-1.5">
-              <label className="text-xs text-gray-500 font-medium">Status</label>
+              <label className="text-xs font-medium text-gray-500">Status</label>
               <select
-                className="text-xs border border-gray-300 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-purple-400"
+                className="text-sm border border-gray-300 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as 'all' | CardStatus)}
               >
@@ -510,7 +545,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
             </div>
 
             {/* Card count */}
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-400 tabular-nums">
               {filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}
             </span>
           </div>
@@ -518,7 +553,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
           {/* Export button */}
           <button
             onClick={() => window.open(exportCardsUrl({ document_id: documentId }))}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -529,7 +564,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
 
         {/* Fix I4 — action error banner (reject / save failures) */}
         {actionError && (
-          <div className="px-4 py-1.5 text-xs text-red-600 bg-red-50 border-b border-red-100">
+          <div className="px-5 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100">
             {actionError}
           </div>
         )}
@@ -546,14 +581,14 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
             </div>
           ) : (
             <table className="w-full text-sm border-collapse">
-              <thead className="sticky top-0 bg-white z-10">
+              <thead className="sticky top-0 bg-gray-50 z-10">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id} className="border-b border-gray-200">
                     {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
                         style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
-                        className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide"
+                        className="px-3 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide"
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                       </th>
@@ -565,13 +600,13 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
                 {table.getRowModel().rows.map((row) => (
                   <tr
                     key={row.id}
-                    className="border-b border-gray-100 even:bg-gray-50 hover:bg-purple-50 transition-colors"
+                    className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
                         style={{ width: cell.column.getSize() !== 150 ? cell.column.getSize() : undefined }}
-                        className="px-3 py-2 align-top"
+                        className="px-3 py-2.5 align-top"
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>

@@ -72,18 +72,18 @@ export default function WorkspacePage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-49px)] overflow-hidden">
+    <div className="flex h-[calc(100vh-48px)] overflow-hidden">
       {/* Left panel */}
-      <aside className="w-64 shrink-0 border-r border-gray-200 flex flex-col">
+      <aside className="bg-white w-64 shrink-0 border-r border-gray-200 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
             Documents
           </h2>
           <button
             onClick={handleUploadClick}
             disabled={uploading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white rounded-md bg-purple-600 hover:bg-purple-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white rounded-md bg-violet-600 hover:bg-violet-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-1"
           >
             {uploading ? (
               <>
@@ -143,8 +143,22 @@ export default function WorkspacePage() {
               Loading…
             </div>
           ) : documents.length === 0 ? (
-            <div className="flex items-center justify-center h-20 text-sm text-gray-400">
-              No documents yet
+            <div className="flex flex-col items-center justify-center h-32 gap-2 px-4 text-center">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-8 w-8 text-gray-200"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              <p className="text-xs text-gray-400">No documents yet.<br />Upload a .docx to get started.</p>
             </div>
           ) : (
             documents.map((doc) => {
@@ -154,15 +168,15 @@ export default function WorkspacePage() {
                   key={doc.id}
                   onClick={() => setSelectedDocumentId(doc.id)}
                   className={[
-                    'group flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors',
+                    'group flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors',
                     isSelected
-                      ? 'bg-purple-50 border-l-2 border-purple-500'
-                      : 'border-l-2 border-transparent',
+                      ? 'bg-violet-50 border-l-2 border-violet-500'
+                      : 'border-l-2 border-transparent hover:bg-gray-50',
                   ].join(' ')}
                 >
                   {/* Doc info */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-800 truncate leading-tight">
+                    <p className="text-sm text-gray-800 font-medium truncate leading-tight">
                       {doc.original_name}
                     </p>
                     <p className="text-xs text-gray-400 mt-0.5">
