@@ -54,12 +54,27 @@ def create_node(body: CurriculumCreate, db: Session = Depends(get_db)):
     db.refresh(node)
     return node_to_dict(node)
 
+def _cascade_path_update(db, parent: Curriculum):
+    """Recursively rebuild path strings for all children of a node."""
+    children = db.query(Curriculum).filter_by(parent_id=parent.id).all()
+    for child in children:
+        child.path = f"{parent.path} > {child.name}"
+        _cascade_path_update(db, child)
+
 @router.patch("/{node_id}")
 def rename_node(node_id: int, body: CurriculumUpdate, db: Session = Depends(get_db)):
     node = db.get(Curriculum, node_id)
     if not node:
         raise HTTPException(404)
     node.name = body.name
+    # Rebuild this node's path from parent
+    if node.parent_id:
+        parent = db.get(Curriculum, node.parent_id)
+        node.path = f"{parent.path} > {body.name}"
+    else:
+        node.path = body.name
+    # Cascade path update to all descendants
+    _cascade_path_update(db, node)
     db.commit()
     db.refresh(node)
     return node_to_dict(node)
@@ -71,5 +86,7 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404)
     if db.query(Document).filter_by(curriculum_id=node_id).count():
         raise HTTPException(400, "Cannot delete node with assigned documents")
+    if db.query(Curriculum).filter_by(parent_id=node_id).count():
+        raise HTTPException(400, "Cannot delete node with children")
     db.delete(node)
     db.commit()
