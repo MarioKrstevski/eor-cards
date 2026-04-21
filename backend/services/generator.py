@@ -1,5 +1,4 @@
 import re
-from typing import Optional
 import anthropic
 from backend.config import DEFAULT_MODEL
 
@@ -61,7 +60,7 @@ Now generate cards from the following study note content.
 Section: {chunk.get('heading', '')}
 
 Source text:
-{chunk['source_text']}
+{chunk.get('source_text', '')}
 
 Generate the cards following ALL the rules above. Output in the exact format:
 number|cloze card text
