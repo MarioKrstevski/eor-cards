@@ -439,9 +439,9 @@ export default function LibraryPage() {
 
   // ── Curriculum helpers ──
 
-  function handleDeselectIfDeleted(id: number) {
-    if (selectedNode?.id === id) setSelectedNode(null);
-  }
+  const handleDeselectIfDeleted = useCallback((id: number) => {
+    setSelectedNode((prev) => (prev?.id === id ? null : prev));
+  }, []);
 
   async function handleAddRoot() {
     if (!rootName.trim()) return;
@@ -457,7 +457,7 @@ export default function LibraryPage() {
 
   // ── Document helpers ──
 
-  async function handleAssignCurriculum(docId: number, value: string) {
+  const handleAssignCurriculum = useCallback(async (docId: number, value: string) => {
     const curriculum_id = value === '' ? null : Number(value);
     try {
       await updateDocument(docId, { curriculum_id });
@@ -465,16 +465,16 @@ export default function LibraryPage() {
     } catch {
       setDocError('Update failed');
     }
-  }
+  }, [fetchDocuments]);
 
-  async function handleDeleteDocument(docId: number) {
+  const handleDeleteDocument = useCallback(async (docId: number) => {
     try {
       await deleteDocument(docId);
       fetchDocuments();
     } catch {
       setDocError('Delete failed');
     }
-  }
+  }, [fetchDocuments]);
 
   // ── Derived data ──
 
