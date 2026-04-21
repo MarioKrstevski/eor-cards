@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteDocument, getDocuments, uploadDocument } from '../api';
 import type { Document } from '../types';
 
@@ -7,23 +7,24 @@ export default function WorkspacePage() {
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  async function fetchDocuments() {
+  const fetchDocuments = useCallback(async () => {
     try {
       const docs = await getDocuments();
       setDocuments(docs);
     } catch {
       // silently fail on refresh — list just stays stale
     }
-  }
+  }, []);
 
   useEffect(() => {
     setLoadingDocs(true);
     fetchDocuments().finally(() => setLoadingDocs(false));
-  }, []);
+  }, [fetchDocuments]);
 
   function handleUploadClick() {
     setUploadError(null);
@@ -57,12 +58,15 @@ export default function WorkspacePage() {
 
   async function handleDelete(e: React.MouseEvent, id: number) {
     e.stopPropagation();
+    setDeleteError(null);
     try {
       await deleteDocument(id);
       if (selectedDocumentId === id) setSelectedDocumentId(null);
       await fetchDocuments();
-    } catch {
-      // ignore — a retry by the user is fine
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : 'Delete failed. Please try again.';
+      setDeleteError(msg);
     }
   }
 
@@ -121,6 +125,13 @@ export default function WorkspacePage() {
         {uploadError && (
           <div className="mx-3 mt-2 px-3 py-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md">
             {uploadError}
+          </div>
+        )}
+
+        {/* Delete error */}
+        {deleteError && (
+          <div className="mx-3 mt-2 px-3 py-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md">
+            {deleteError}
           </div>
         )}
 
