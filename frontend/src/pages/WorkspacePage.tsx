@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { deleteDocument, getDocuments, uploadDocument } from '../api';
 import type { Document } from '../types';
+import CardsPanel from './CardsPanel';
 
 export default function WorkspacePage() {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -198,9 +199,7 @@ export default function WorkspacePage() {
       </aside>
 
       {/* Right panel */}
-      <main className="flex-1 overflow-hidden flex items-center justify-center text-sm text-gray-400">
-        Select a document to view cards
-      </main>
+      <CardsPanel documentId={selectedDocumentId} />
     </div>
   );
 }
