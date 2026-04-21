@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.db import engine, Base
@@ -28,4 +28,6 @@ if os.path.exists(STATIC_DIR) and os.listdir(STATIC_DIR):
 
     @app.get("/{full_path:path}")
     async def spa_fallback(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404)
         return FileResponse(os.path.join(STATIC_DIR, "index.html"))
