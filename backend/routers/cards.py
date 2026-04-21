@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
@@ -39,11 +39,11 @@ def card_to_dict(card: Card) -> dict:
 def list_cards(
     document_id: Optional[int] = None,
     chunk_id: Optional[int] = None,
-    status: Optional[str] = None,
+    status: Optional[CardStatus] = None,
     needs_review: Optional[bool] = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Card)
+    q = db.query(Card).options(joinedload(Card.document), joinedload(Card.chunk))
     if document_id:
         q = q.filter(Card.document_id == document_id)
     if chunk_id:

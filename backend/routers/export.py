@@ -2,10 +2,10 @@ import csv
 import io
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from backend.db import get_db
-from backend.models import Card, Document
+from backend.models import Card, Curriculum, Document
 
 router = APIRouter()
 
@@ -16,14 +16,20 @@ def export_cards(
     curriculum_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Card).join(Document, Card.document_id == Document.id)
+    q = (
+        db.query(Card)
+        .join(Document, Card.document_id == Document.id)
+        .options(joinedload(Card.document), joinedload(Card.chunk))
+    )
     if document_id:
         q = q.filter(Card.document_id == document_id)
     elif curriculum_id:
-        from backend.models import Curriculum
         node = db.get(Curriculum, curriculum_id)
         if node:
-            q = q.filter(Document.topic_path.startswith(node.path))
+            q = q.filter(
+                (Document.topic_path == node.path) |
+                Document.topic_path.startswith(node.path + " > ")
+            )
     cards = q.all()
 
     output = io.StringIO()
