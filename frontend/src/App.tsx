@@ -1,9 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import WorkspacePage from './pages/WorkspacePage';
-
-function LibraryPage() {
-  return <div>Library</div>;
-}
+import LibraryPage from './pages/LibraryPage';
 
 export default function App() {
   return (
