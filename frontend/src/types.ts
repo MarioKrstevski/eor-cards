@@ -5,6 +5,7 @@ export interface CurriculumNode {
   name: string;
   parent_id: number | null;
   path: string;
+  level: number;
   children: CurriculumNode[];
 }
 
@@ -83,7 +84,7 @@ export interface CostEstimate {
 }
 
 export interface StartGenerationResponse {
-  job_id: string;
+  job_id: number;
   total_chunks: number;
   estimated_cost_usd: number;
 }
@@ -91,7 +92,7 @@ export interface StartGenerationResponse {
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed';
 
 export interface GenerationJob {
-  id: string;
+  id: number;
   document_id: number;
   status: JobStatus;
   total_chunks: number;

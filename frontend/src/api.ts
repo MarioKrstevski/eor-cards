@@ -17,7 +17,7 @@ const http = axios.create({ baseURL: '/api' });
 // ─── Curriculum ───────────────────────────────────────────────────────────────
 
 export async function getCurriculum(): Promise<CurriculumNode[]> {
-  const res = await http.get<CurriculumNode[]>('/curriculum/');
+  const res = await http.get<CurriculumNode[]>('/curriculum');
   return res.data;
 }
 
@@ -44,7 +44,7 @@ export async function deleteCurriculumNode(id: number): Promise<void> {
 // ─── Rule Sets ────────────────────────────────────────────────────────────────
 
 export async function getRuleSets(): Promise<RuleSet[]> {
-  const res = await http.get<RuleSet[]>('/rules/');
+  const res = await http.get<RuleSet[]>('/rules');
   return res.data;
 }
 
@@ -77,7 +77,7 @@ export async function setDefaultRuleSet(id: number): Promise<RuleSet> {
 // ─── Documents ────────────────────────────────────────────────────────────────
 
 export async function getDocuments(): Promise<Document[]> {
-  const res = await http.get<Document[]>('/documents/');
+  const res = await http.get<Document[]>('/documents');
   return res.data;
 }
 
@@ -91,15 +91,13 @@ export async function uploadDocument(
 ): Promise<UploadDocumentResponse> {
   const form = new FormData();
   form.append('file', file);
-  const res = await http.post<UploadDocumentResponse>('/documents/upload', form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  });
+  const res = await http.post<UploadDocumentResponse>('/documents/upload', form);
   return res.data;
 }
 
 export async function updateDocument(
   id: number,
-  params: { curriculum_id: number | null }
+  params: { curriculum_id?: number | null }
 ): Promise<Document> {
   const res = await http.patch<Document>(`/documents/${id}`, params);
   return res.data;
@@ -117,7 +115,7 @@ export async function getCards(params?: {
   status?: CardStatus;
   needs_review?: boolean;
 }): Promise<Card[]> {
-  const res = await http.get<Card[]>('/cards/', { params });
+  const res = await http.get<Card[]>('/cards', { params });
   return res.data;
 }
 
@@ -166,7 +164,7 @@ export async function startGeneration(params: {
   return res.data;
 }
 
-export async function getGenerationJob(jobId: string): Promise<GenerationJob> {
+export async function getGenerationJob(jobId: number): Promise<GenerationJob> {
   const res = await http.get<GenerationJob>(`/generate/jobs/${jobId}`);
   return res.data;
 }
