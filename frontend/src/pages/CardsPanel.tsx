@@ -24,6 +24,150 @@ interface CardsPanelProps {
 
 const columnHelper = createColumnHelper<Card>();
 
+// ── Cloze rendering utility ────────────────────────────────────────────────────
+function renderClozeHtml(html: string): string {
+  return html.replace(
+    /\{\{c\d+::([^}]+)\}\}/g,
+    '<span style="background:#fef3c7;border-radius:3px;padding:1px 4px;font-weight:600;color:#92400e;border-bottom:2px solid #f59e0b">$1</span>'
+  );
+}
+
+// ── CardTile component ─────────────────────────────────────────────────────────
+interface CardTileProps {
+  card: Card;
+  cardIndex: number;
+  onEdit: (card: Card) => void;
+  onReject: (id: number) => void;
+  editingId: number | null;
+  editFrontHtml: string;
+  setEditFrontHtml: (v: string) => void;
+  editTags: string;
+  setEditTags: (v: string) => void;
+  onSave: (id: number) => void;
+  onCancel: () => void;
+}
+
+function CardTile({
+  card,
+  cardIndex,
+  onEdit,
+  onReject,
+  editingId,
+  editFrontHtml,
+  setEditFrontHtml,
+  editTags,
+  setEditTags,
+  onSave,
+  onCancel,
+}: CardTileProps) {
+  const isEditing = editingId === card.id;
+  const isRejected = card.status === 'rejected';
+
+  return (
+    <div
+      className={`bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col${isRejected ? ' opacity-50' : ''}`}
+    >
+      {/* Card body */}
+      <div className="p-4 flex-1" style={{ minHeight: '100px' }}>
+        {isEditing ? (
+          <div className="flex flex-col gap-2">
+            <textarea
+              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 resize-y min-h-[80px] focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              value={editFrontHtml}
+              onChange={(e) => setEditFrontHtml(e.target.value)}
+            />
+            <input
+              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              value={editTags}
+              onChange={(e) => setEditTags(e.target.value)}
+              placeholder="tag1, tag2"
+            />
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => onSave(card.id)}
+                className="px-2 py-1 text-xs font-medium text-white bg-violet-600 rounded-md hover:bg-violet-700 transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={onCancel}
+                className="px-2 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className="text-sm leading-relaxed text-gray-800"
+            dangerouslySetInnerHTML={{ __html: renderClozeHtml(card.front_html) }}
+          />
+        )}
+      </div>
+
+      {/* Bottom strip */}
+      <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/50 rounded-b-lg flex items-center gap-1.5">
+        {/* Card number */}
+        <span className="text-xs text-gray-400 tabular-nums shrink-0">#{cardIndex}</span>
+
+        {/* Tags */}
+        <div className="flex items-center gap-1 flex-1 overflow-hidden">
+          {card.tags.slice(0, 2).map((tag) => (
+            <span
+              key={tag}
+              className="bg-gray-100 text-gray-500 text-xs px-1.5 py-0.5 rounded-full truncate max-w-[80px]"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+
+        {/* Right side: review flag, status badge, actions */}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Needs review */}
+          {card.needs_review && (
+            <span title="Needs review" className="text-yellow-500 text-base leading-none">⚠</span>
+          )}
+
+          {/* Status badge */}
+          {isRejected ? (
+            <span className="inline-flex items-center gap-1 text-xs text-gray-400 line-through">
+              Rejected
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-green-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
+              Active
+            </span>
+          )}
+
+          {/* Edit button */}
+          <button
+            onClick={() => onEdit(card)}
+            title="Edit card"
+            className="p-1 text-gray-400 hover:text-violet-600 transition-colors rounded"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
+            </svg>
+          </button>
+
+          {/* Reject button */}
+          <button
+            onClick={() => onReject(card.id)}
+            title="Reject card"
+            className="p-1 text-gray-400 hover:text-red-500 transition-colors rounded"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CardsPanel({ documentId }: CardsPanelProps) {
   // ── Generation controls state ──────────────────────────────────────────────
   const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
@@ -55,6 +199,9 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
 
   // Fix I4 — action error state for reject / save failures
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // ── View mode state ────────────────────────────────────────────────────────
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
 
   // ── Load rule sets and models once ────────────────────────────────────────
   // Fix I3 — add .catch(console.error) so mount errors surface in the console
@@ -105,6 +252,7 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
     setNeedsReviewOnly(false);
     setStatusFilter('all');
     setActionError(null);
+    setViewMode('table');
 
     if (documentId != null) {
       fetchCards(documentId);
@@ -519,6 +667,33 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
         {/* Toolbar above table */}
         <div className="flex items-center justify-between gap-3 px-5 py-2.5 border-b border-gray-100 shrink-0 bg-white">
           <div className="flex items-center gap-4">
+            {/* View mode toggle */}
+            <div className="flex items-center gap-0.5 rounded-md border border-gray-200 p-0.5 bg-gray-50">
+              {/* Table view */}
+              <button
+                onClick={() => setViewMode('table')}
+                title="Table view"
+                className={`p-1 rounded transition-colors ${viewMode === 'table' ? 'bg-violet-100 text-violet-700' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M10 4v16M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
+                </svg>
+              </button>
+              {/* Cards view */}
+              <button
+                onClick={() => setViewMode('cards')}
+                title="Card view"
+                className={`p-1 rounded transition-colors ${viewMode === 'cards' ? 'bg-violet-100 text-violet-700' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <rect x="3" y="3" width="8" height="8" rx="1" strokeLinecap="round" strokeLinejoin="round" />
+                  <rect x="13" y="3" width="8" height="8" rx="1" strokeLinecap="round" strokeLinejoin="round" />
+                  <rect x="3" y="13" width="8" height="8" rx="1" strokeLinecap="round" strokeLinejoin="round" />
+                  <rect x="13" y="13" width="8" height="8" rx="1" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+
             {/* Needs review toggle */}
             <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
               <input
@@ -569,17 +744,40 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
           </div>
         )}
 
-        {/* Table */}
-        <div className="flex-1 overflow-auto">
-          {cardsLoading ? (
-            <div className="flex items-center justify-center h-32 text-sm text-gray-400">
-              Loading cards…
+        {/* Loading / empty states (shared across views) */}
+        {cardsLoading ? (
+          <div className="flex items-center justify-center h-32 text-sm text-gray-400 flex-1">
+            Loading cards…
+          </div>
+        ) : filteredCards.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-sm text-gray-400 flex-1">
+            {cards.length === 0 ? 'No cards yet — generate some above.' : 'No cards match the current filters.'}
+          </div>
+        ) : viewMode === 'cards' ? (
+          /* Card grid view */
+          <div className="p-4 overflow-y-auto flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {filteredCards.map((card, idx) => (
+                <CardTile
+                  key={card.id}
+                  card={card}
+                  cardIndex={card.card_number ?? idx + 1}
+                  onEdit={startEdit}
+                  onReject={handleReject}
+                  editingId={editingId}
+                  editFrontHtml={editFrontHtml}
+                  setEditFrontHtml={setEditFrontHtml}
+                  editTags={editTags}
+                  setEditTags={setEditTags}
+                  onSave={saveEdit}
+                  onCancel={cancelEdit}
+                />
+              ))}
             </div>
-          ) : filteredCards.length === 0 ? (
-            <div className="flex items-center justify-center h-32 text-sm text-gray-400">
-              {cards.length === 0 ? 'No cards yet — generate some above.' : 'No cards match the current filters.'}
-            </div>
-          ) : (
+          </div>
+        ) : (
+          /* Table view */
+          <div className="flex-1 overflow-auto">
             <table className="w-full text-sm border-collapse">
               <thead className="sticky top-0 bg-gray-50 z-10">
                 {table.getHeaderGroups().map((headerGroup) => (
@@ -615,8 +813,8 @@ export default function CardsPanel({ documentId }: CardsPanelProps) {
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </main>
   );
