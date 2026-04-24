@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -167,40 +168,57 @@ def _run_generation(
         total_input_tokens = 0
         total_output_tokens = 0
 
+        # Pre-load all chunks so threads don't share the db session
+        chunks_by_id = {}
         for chunk_id in chunk_ids:
             chunk = db.get(Chunk, chunk_id)
-            if not chunk:
+            if chunk:
+                chunks_by_id[chunk_id] = {
+                    "id": chunk.id,
+                    "source_text": chunk.source_text,
+                    "heading": chunk.heading,
+                    "topic_path": chunk.topic_path,
+                }
+            else:
                 logger.warning("Chunk %d not found during generation job %d, skipping", chunk_id, job_id)
-                job.processed_chunks += 1
-                db.commit()
-                continue
-            tags = chunk.topic_path.split(" > ") if chunk.topic_path else []
-            if replace_existing:
+
+        if replace_existing:
+            for chunk_id in chunks_by_id:
                 db.query(Card).filter(Card.chunk_id == chunk_id).delete()
-                db.commit()
+            db.commit()
+
+        def process_chunk(chunk_data):
             cards_data, needs_review, usage = generate_cards_for_chunk(
                 client,
-                {"source_text": chunk.source_text, "heading": chunk.heading},
+                {"source_text": chunk_data["source_text"], "heading": chunk_data["heading"],
+                 "topic_path": chunk_data["topic_path"]},
                 rules_text,
                 model,
             )
-            for card_data in cards_data:
-                card = Card(
-                    chunk_id=chunk.id,
-                    document_id=document_id,
-                    card_number=card_data["card_number"],
-                    front_html=card_data["front_html"],
-                    front_text=card_data["front_text"],
-                    tags=tags,
-                    needs_review=needs_review,
-                )
-                db.add(card)
-            chunk.card_count = len(cards_data)
-            total_cards += len(cards_data)
-            total_input_tokens += usage["input_tokens"]
-            total_output_tokens += usage["output_tokens"]
-            job.processed_chunks += 1
-            db.commit()
+            return chunk_data, cards_data, needs_review, usage
+
+        with ThreadPoolExecutor(max_workers=14) as executor:
+            futures = {executor.submit(process_chunk, c): c for c in chunks_by_id.values()}
+            for future in as_completed(futures):
+                chunk_data, cards_data, needs_review, usage = future.result()
+                tags = chunk_data["topic_path"].split(" > ") if chunk_data["topic_path"] else []
+                for card_data in cards_data:
+                    card = Card(
+                        chunk_id=chunk_data["id"],
+                        document_id=document_id,
+                        card_number=card_data["card_number"],
+                        front_html=card_data["front_html"],
+                        front_text=card_data["front_text"],
+                        tags=tags,
+                        needs_review=needs_review,
+                    )
+                    db.add(card)
+                db.query(Chunk).filter(Chunk.id == chunk_data["id"]).update({"card_count": len(cards_data)})
+                total_cards += len(cards_data)
+                total_input_tokens += usage["input_tokens"]
+                total_output_tokens += usage["output_tokens"]
+                job.processed_chunks += 1
+                db.commit()
 
         db.add(AIUsageLog(
             operation="card_generation",
