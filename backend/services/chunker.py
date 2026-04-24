@@ -504,12 +504,21 @@ def parse_html_to_elements(html: str) -> tuple[list, list]:
             b64_data = m.group(2).strip()
             try:
                 img_bytes = base64.b64decode(b64_data)
+                # Detect real format from magic bytes — source may mislabel (e.g. GIF as PNG)
+                if img_bytes[:6] in (b'GIF87a', b'GIF89a'):
+                    media_type = 'image/gif'
+                elif img_bytes[:8] == b'\x89PNG\r\n\x1a\n':
+                    media_type = 'image/png'
+                elif img_bytes[:2] == b'\xff\xd8':
+                    media_type = 'image/jpeg'
+                elif img_bytes[:4] == b'RIFF' and img_bytes[8:12] == b'WEBP':
+                    media_type = 'image/webp'
                 pil_img = Image.open(io.BytesIO(img_bytes))
                 if pil_img.width > 800:
                     ratio = 800 / pil_img.width
                     pil_img = pil_img.resize((800, int(pil_img.height * ratio)), Image.Resampling.LANCZOS)
                     buf = io.BytesIO()
-                    fmt = "PNG" if media_type == "image/png" else "JPEG"
+                    fmt = "PNG" if media_type == "image/png" else "GIF" if media_type == "image/gif" else "JPEG"
                     pil_img.save(buf, format=fmt)
                     b64_data = base64.b64encode(buf.getvalue()).decode()
                 data_uri = f"data:{media_type};base64,{b64_data}"
