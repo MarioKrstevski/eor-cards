@@ -52,35 +52,41 @@ def regenerate_single_card(
     topic = chunk.get('topic_path') or ''
     topic_line = f"Curriculum context (for reference only): {topic}\n" if topic else ''
 
-    prompt = f"""{rules_text}
-
----
-
-You are regenerating a single flashcard from the source content below.
-
-{topic_line}Section: {chunk.get('heading', '')}
-
-Source text:
-{chunk.get('source_text', '')}
-
-The existing card (improve or replace it):
-{existing_card_html}
-"""
+    chunk_prompt = (
+        f"You are regenerating a single flashcard from the source content below.\n\n"
+        f"{topic_line}Section: {chunk.get('heading', '')}\n\n"
+        f"Source text:\n{chunk.get('source_text', '')}\n\n"
+        f"The existing card (improve or replace it):\n{existing_card_html}\n"
+    )
     if extra_prompt:
-        prompt += f"\nAdditional guidance: {extra_prompt}\n"
-
-    prompt += "\nGenerate ONE improved replacement card. Output exactly:\n1|cloze card text"
+        chunk_prompt += f"\nAdditional guidance: {extra_prompt}\n"
+    chunk_prompt += "\nGenerate ONE improved replacement card. Output exactly:\n1|cloze card text"
 
     response = client.messages.create(
         model=model,
         max_tokens=512,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": rules_text + "\n\n---\n\n",
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {
+                    "type": "text",
+                    "text": chunk_prompt,
+                },
+            ],
+        }],
     )
     raw = response.content[0].text.strip()
     cards, needs_review = parse_card_output(raw)
     usage = {
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
+        "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+        "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
     }
     return cards, needs_review, usage
 
@@ -95,36 +101,46 @@ def generate_cards_for_chunk(
 
     Returns (cards, needs_review, usage) where usage is
     {"input_tokens": int, "output_tokens": int}.
+    Rules text is marked for prompt caching — repeated calls within 5 min
+    reuse the cached prefix, cutting input token cost ~90% for the rules portion.
     """
     topic = chunk.get('topic_path') or ''
     topic_line = f"Curriculum context (for reference only): {topic}\n" if topic else ''
 
-    prompt = f"""{rules_text}
-
----
-
-Now generate cards from the following study note content.
-
-{topic_line}Section: {chunk.get('heading', '')}
-
-Source text:
-{chunk.get('source_text', '')}
-
-Generate the cards following ALL the rules above. Output in the exact format:
-number|cloze card text
-
-If you cannot confidently generate quality cards for this content, output NEEDS_REVIEW on its own line at the end.
-Remember: card N uses only cN for all clozes."""
+    chunk_prompt = (
+        f"Now generate cards from the following study note content.\n\n"
+        f"{topic_line}Section: {chunk.get('heading', '')}\n\n"
+        f"Source text:\n{chunk.get('source_text', '')}\n\n"
+        f"Generate the cards following ALL the rules above. Output in the exact format:\n"
+        f"number|cloze card text\n\n"
+        f"If you cannot confidently generate quality cards for this content, output NEEDS_REVIEW on its own line at the end.\n"
+        f"Remember: card N uses only cN for all clozes."
+    )
 
     response = client.messages.create(
         model=model,
         max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": rules_text + "\n\n---\n\n",
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {
+                    "type": "text",
+                    "text": chunk_prompt,
+                },
+            ],
+        }],
     )
     raw = response.content[0].text.strip()
     cards, needs_review = parse_card_output(raw)
     usage = {
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
+        "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+        "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
     }
     return cards, needs_review, usage
