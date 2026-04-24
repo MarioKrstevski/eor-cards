@@ -3,13 +3,14 @@ import type {
   CurriculumNode,
   RuleSet,
   Document,
-  UploadDocumentResponse,
+  UploadResult,
   Card,
   CardStatus,
   Model,
   CostEstimate,
   StartGenerationResponse,
   GenerationJob,
+  AIUsageSummary,
 } from './types';
 
 const http = axios.create({ baseURL: '/api' });
@@ -21,11 +22,16 @@ export async function getCurriculum(): Promise<CurriculumNode[]> {
   return res.data;
 }
 
+export async function getCurriculumCoverage(): Promise<Record<string, number>> {
+  const res = await http.get<Record<string, number>>('/curriculum/coverage');
+  return res.data;
+}
+
 export async function createCurriculumNode(params: {
   name: string;
   parent_id?: number | null;
 }): Promise<CurriculumNode> {
-  const res = await http.post<CurriculumNode>('/curriculum/', params);
+  const res = await http.post<CurriculumNode>('/curriculum', params);
   return res.data;
 }
 
@@ -53,7 +59,7 @@ export async function createRuleSet(params: {
   content: string;
   is_default?: boolean;
 }): Promise<RuleSet> {
-  const res = await http.post<RuleSet>('/rules/', params);
+  const res = await http.post<RuleSet>('/rules', params);
   return res.data;
 }
 
@@ -86,20 +92,24 @@ export async function getDocument(id: number): Promise<Document> {
   return res.data;
 }
 
-export async function uploadDocument(
-  file: File
-): Promise<UploadDocumentResponse> {
+export async function uploadDocument(file: File, chunkingModel?: string): Promise<UploadResult> {
   const form = new FormData();
   form.append('file', file);
-  const res = await http.post<UploadDocumentResponse>('/documents/upload', form);
+  const params = chunkingModel ? { chunking_model: chunkingModel } : undefined;
+  const res = await http.post<UploadResult>('/documents/upload', form, { params });
   return res.data;
 }
 
-export async function updateDocument(
-  id: number,
-  params: { curriculum_id?: number | null }
+export async function pasteDocument(html: string, name: string, chunkingModel?: string): Promise<UploadResult> {
+  const res = await http.post<UploadResult>('/documents/paste', { html, name, chunking_model: chunkingModel });
+  return res.data;
+}
+
+export async function confirmDocumentTopics(
+  docId: number,
+  topics: { chunk_id: number; topic_id: number | null }[]
 ): Promise<Document> {
-  const res = await http.patch<Document>(`/documents/${id}`, params);
+  const res = await http.post<Document>(`/documents/${docId}/confirm-topics`, { topics });
   return res.data;
 }
 
@@ -114,6 +124,8 @@ export async function getCards(params?: {
   chunk_id?: number;
   status?: CardStatus;
   needs_review?: boolean;
+  tag?: string;
+  search_q?: string;
 }): Promise<Card[]> {
   const res = await http.get<Card[]>('/cards', { params });
   return res.data;
@@ -134,6 +146,18 @@ export async function updateCard(
 
 export async function rejectCard(id: number): Promise<Card> {
   const res = await http.post<Card>(`/cards/${id}/reject`);
+  return res.data;
+}
+
+export async function deleteCard(id: number): Promise<void> {
+  await http.delete(`/cards/${id}`);
+}
+
+export async function regenerateCard(
+  id: number,
+  params: { model?: string; prompt?: string }
+): Promise<Card> {
+  const res = await http.post<Card>(`/cards/${id}/regenerate`, params);
   return res.data;
 }
 
@@ -159,6 +183,7 @@ export async function startGeneration(params: {
   chunk_ids?: number[];
   rule_set_id: number;
   model: string;
+  replace_existing?: boolean;
 }): Promise<StartGenerationResponse> {
   const res = await http.post<StartGenerationResponse>('/generate/start', params);
   return res.data;
@@ -183,4 +208,11 @@ export function exportCardsUrl(params?: {
     url.searchParams.set('curriculum_id', String(params.curriculum_id));
   }
   return url.toString();
+}
+
+// ─── Usage ────────────────────────────────────────────────────────────────────
+
+export async function getUsageSummary(): Promise<AIUsageSummary> {
+  const res = await http.get<AIUsageSummary>('/usage/summary');
+  return res.data;
 }

@@ -21,28 +21,40 @@ export interface RuleSet {
 
 // ─── Documents ────────────────────────────────────────────────────────────────
 
-export interface Chunk {
+export interface ChunkWithTopic {
   id: number;
   chunk_index: number;
   heading: string | null;
   content_type: string;
   source_html: string;
   card_count: number;
+  topic_id: number | null;
+  topic_path: string | null;
+  topic_confirmed: boolean;
 }
 
 export interface Document {
   id: number;
   original_name: string;
   filename: string;
-  curriculum_id: number | null;
-  topic_path: string | null;
   uploaded_at: string;
   chunk_count: number;
-  chunks?: Chunk[];
+  total_cards: number;
+  chunks?: ChunkWithTopic[];
 }
 
-export interface UploadDocumentResponse extends Document {
-  suggested_curriculum_id?: number | null;
+export interface UploadResult {
+  id: number;
+  original_name: string;
+  filename: string;
+  uploaded_at: string;
+  chunk_count: number;
+  chunks: ChunkWithTopic[];
+  ai_costs: {
+    chunking_usd: number;
+    topic_detection_usd: number;
+    total_usd: number;
+  };
 }
 
 // ─── Cards ────────────────────────────────────────────────────────────────────
@@ -64,6 +76,7 @@ export interface Card {
   updated_at: string;
   topic_path: string | null;
   chunk_heading: string | null;
+  chunk_source_html: string | null;
 }
 
 // ─── Generation ───────────────────────────────────────────────────────────────
@@ -104,4 +117,14 @@ export interface GenerationJob {
   error_message: string | null;
   started_at: string | null;
   finished_at: string | null;
+}
+
+export interface AIUsageSummary {
+  total_cost_usd: number;
+  by_operation: Record<string, {
+    cost_usd: number;
+    input_tokens: number;
+    output_tokens: number;
+    count: number;
+  }>;
 }

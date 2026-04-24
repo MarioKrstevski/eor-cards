@@ -316,24 +316,32 @@ Return ONLY the JSON array, no other text."""
     return prompt
 
 
-def call_claude_for_chunking(elements: list, images: list, rules_md_path: Optional[str], client: anthropic.Anthropic) -> list:
-    """Call Claude API to determine chunk boundaries. Client is injected (not created here)."""
+def call_claude_for_chunking(elements: list, images: list, rules_md_path: Optional[str], client: anthropic.Anthropic, model: str = "claude-haiku-4-5-20251001") -> tuple[list, dict]:
+    """Call Claude API to determine chunk boundaries. Client is injected (not created here).
+    Returns (chunks_list, usage_dict) where usage_dict = {"input_tokens": ..., "output_tokens": ...}.
+    """
     prompt = build_claude_chunking_prompt(elements, images, rules_md_path)
     content = [{"type": "text", "text": prompt}]
     for img in images[:10]:
+        if not img.get("base64"):
+            continue
         content.append({"type": "image", "source": {"type": "base64", "media_type": img["media_type"], "data": img["base64"]}})
         content.append({"type": "text", "text": f"[Image from paragraph {img['para_index']}]"})
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=model,
         max_tokens=4096,
         messages=[{"role": "user", "content": content}],
     )
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
     response_text = response.content[0].text.strip()
     if response_text.startswith("```"):
         response_text = re.sub(r"^```\w*\n?", "", response_text)
         response_text = re.sub(r"\n?```$", "", response_text)
     try:
-        return json.loads(response_text)
+        return json.loads(response_text), usage
     except json.JSONDecodeError as e:
         raise ValueError(f"Claude returned non-JSON chunking response: {e}\nResponse: {response_text[:200]}") from e
 
@@ -390,6 +398,358 @@ def assemble_chunks(elements: list, claude_chunks: list) -> list:
             "images": all_images,
         })
     return result_chunks
+
+
+def _parse_css_class_margins(html: str) -> dict:
+    """Extract left-margin values (px) keyed by CSS selector from the <style> block.
+
+    Pages generates rules like:
+        li.li1 {margin: 0.0px 0.0px 0.0px 0.0px; ...}
+        li.li2 {margin: 0.0px 0.0px 0.0px 28.0px; ...}
+    The fourth value of the shorthand margin is the left margin.
+    """
+    result: dict = {}
+    style_block = re.search(r'<style[^>]*>(.*?)</style>', html, re.DOTALL | re.I)
+    if not style_block:
+        return result
+    css = style_block.group(1)
+    for rule in re.finditer(r'([\w.#-]+)\s*\{([^}]+)\}', css):
+        selector = rule.group(1).strip()
+        props = rule.group(2)
+        # margin shorthand: top right bottom left
+        m = re.search(
+            r'margin\s*:\s*([\d.]+)(?:px|pt)\s+([\d.]+)(?:px|pt)\s+([\d.]+)(?:px|pt)\s+([\d.]+)(px|pt)',
+            props, re.I
+        )
+        if m:
+            value = float(m.group(4))
+            unit = m.group(5).lower()
+            if unit == 'pt':
+                value = value * 1.333  # pt → px
+            result[selector] = value
+            continue
+        # explicit margin-left / padding-left
+        ml = re.search(r'(?:margin|padding)-left\s*:\s*([\d.]+)(px|pt)', props, re.I)
+        if ml:
+            value = float(ml.group(1))
+            if ml.group(2).lower() == 'pt':
+                value = value * 1.333
+            result[selector] = value
+    return result
+
+
+def parse_html_to_elements(html: str) -> tuple[list, list]:
+    """Parse clipboard HTML (Pages, Word, Google Docs, etc.) into the same element format as parse_docx."""
+    import html as html_lib
+    from bs4 import BeautifulSoup, Tag, NavigableString
+
+    # Extract just the clipboard fragment if Word/Office markers are present
+    frag_match = re.search(r'<!--StartFragment-->(.*?)<!--EndFragment-->', html, re.DOTALL)
+    if frag_match:
+        html = frag_match.group(1)
+
+    # Pre-parse CSS class → left-margin mapping (used for Pages indent detection)
+    css_margins = _parse_css_class_margins(html)
+
+    soup = BeautifulSoup(html, 'html.parser')
+    elements: list = []
+    all_images: list = []
+    para_idx = 0
+
+    def node_to_clean_html(node) -> str:
+        """Recursively convert a BS4 node to HTML keeping only b/i formatting."""
+        if isinstance(node, NavigableString):
+            return html_lib.escape(str(node))
+        tag = node.name or ''
+        # Skip XML/Office namespace tags (o:p, w:*, etc.)
+        if ':' in tag:
+            return ''
+        inner = ''.join(node_to_clean_html(c) for c in node.children)
+        if tag in ('b', 'strong'):
+            return f'<b>{inner}</b>' if inner.strip() else inner
+        if tag in ('i', 'em'):
+            return f'<i>{inner}</i>' if inner.strip() else inner
+        # Honour inline bold/italic via style attribute
+        style = (node.get('style', '') if hasattr(node, 'get') else '').replace(' ', '').lower()
+        if 'font-weight:bold' in style or 'font-weight:700' in style:
+            return f'<b>{inner}</b>' if inner.strip() else inner
+        if 'font-style:italic' in style:
+            return f'<i>{inner}</i>' if inner.strip() else inner
+        return inner
+
+    def extract_bold_terms(node) -> list:
+        terms = []
+        for b in node.find_all(['b', 'strong']):
+            t = b.get_text().strip()
+            if t:
+                terms.append(t)
+        for span in node.find_all('span'):
+            style = (span.get('style', '') or '').replace(' ', '').lower()
+            if 'font-weight:bold' in style or 'font-weight:700' in style:
+                t = span.get_text().strip()
+                if t:
+                    terms.append(t)
+        return terms
+
+    def extract_images_from_node(node) -> list:
+        imgs = []
+        for img_tag in node.find_all('img'):
+            src = img_tag.get('src', '')
+            if not src.startswith('data:'):
+                continue
+            m = re.match(r'data:(image/[^;]+);base64,(.+)', src, re.DOTALL)
+            if not m:
+                continue
+            media_type = m.group(1)
+            b64_data = m.group(2).strip()
+            try:
+                img_bytes = base64.b64decode(b64_data)
+                pil_img = Image.open(io.BytesIO(img_bytes))
+                if pil_img.width > 800:
+                    ratio = 800 / pil_img.width
+                    pil_img = pil_img.resize((800, int(pil_img.height * ratio)), Image.Resampling.LANCZOS)
+                    buf = io.BytesIO()
+                    fmt = "PNG" if media_type == "image/png" else "JPEG"
+                    pil_img.save(buf, format=fmt)
+                    b64_data = base64.b64encode(buf.getvalue()).decode()
+                data_uri = f"data:{media_type};base64,{b64_data}"
+                imgs.append({
+                    "data_uri": data_uri,
+                    "media_type": media_type,
+                    "base64": b64_data,      # required by call_claude_for_chunking
+                    "para_index": para_idx,  # used for Claude prompt annotation
+                })
+            except Exception:
+                # Fallback: skip sending to Claude but keep in source_html
+                imgs.append({
+                    "data_uri": src,
+                    "media_type": media_type,
+                    "base64": None,
+                    "para_index": para_idx,
+                })
+        return imgs
+
+    def is_word_list_para(tag) -> bool:
+        classes = tag.get('class') or []
+        cls_str = ' '.join(classes) if isinstance(classes, list) else str(classes)
+        return 'MsoListParagraph' in cls_str or 'MsoListBullet' in cls_str
+
+    def is_all_bold(tag) -> bool:
+        text = tag.get_text().strip()
+        if not text:
+            return False
+        bold_text = ''.join(b.get_text() for b in tag.find_all(['b', 'strong']))
+        for span in tag.find_all('span'):
+            style = (span.get('style', '') or '').replace(' ', '').lower()
+            if 'font-weight:bold' in style or 'font-weight:700' in style:
+                bold_text += span.get_text()
+        return len(bold_text.strip()) >= len(text) * 0.8
+
+    def process_element(elem):
+        nonlocal para_idx
+        if not isinstance(elem, Tag):
+            return
+        tag = elem.name or ''
+
+        if tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
+            text = elem.get_text(' ', strip=True)
+            html_out = node_to_clean_html(elem)
+            imgs = extract_images_from_node(elem)
+            if text or imgs:
+                elements.append({
+                    'type': 'heading', 'text': text, 'html': html_out or text,
+                    'bold_terms': [text] if text else [], 'level': int(tag[1]),
+                    'para_index': para_idx, 'images': imgs, 'is_empty': False,
+                })
+                all_images.extend(imgs)
+                para_idx += 1
+
+        elif tag == 'table':
+            rows = []
+            for tr in elem.find_all('tr'):
+                cells = []
+                for td in tr.find_all(['td', 'th']):
+                    cells.append({'text': td.get_text(' ', strip=True), 'html': node_to_clean_html(td)})
+                if cells:
+                    rows.append(cells)
+            if rows:
+                elements.append({
+                    'type': 'table',
+                    'text': '\n'.join(' | '.join(c['text'] for c in row) for row in rows),
+                    'html': table_to_html(rows), 'bold_terms': [], 'level': 0,
+                    'para_index': para_idx, 'images': [], 'is_empty': False,
+                })
+                para_idx += 1
+
+        elif tag in ('ul', 'ol'):
+            # ── Level calculation helper ──────────────────────────────────────
+            def get_li_margin(li_elem) -> float:
+                # Priority 1: CSS class from <style> block (Pages: li.li1 {margin: ... left})
+                classes = li_elem.get('class') or []
+                for cls in (classes if isinstance(classes, list) else [classes]):
+                    for key in (f"{li_elem.name}.{cls}", f".{cls}"):
+                        if key in css_margins:
+                            return css_margins[key]
+                # Priority 2: inline margin-left / padding-left
+                style = li_elem.get('style', '') or ''
+                m = re.search(r'(?:margin|padding)-left\s*:\s*([\d.]+)', style, re.I)
+                if m:
+                    return float(m.group(1))
+                return 0.0
+
+            # Build margin→offset map across ALL <li> descendants of this list
+            # so relative levels are consistent even with Pages' flat+nested hybrid
+            all_margins_here = sorted({get_li_margin(li) for li in elem.find_all('li')})
+            margin_to_offset = {v: i for i, v in enumerate(all_margins_here)}
+
+            # Base level: count ancestor ul/ol that are NOT direct-ul-in-ul (Pages artefact)
+            proper_nesting = sum(
+                1 for a in elem.parents
+                if a.name in ('ul', 'ol') and a.parent and a.parent.name not in ('ul', 'ol')
+            )
+            base_level = 3 + proper_nesting
+
+            def process_li(li_elem):
+                nonlocal para_idx
+                # Google Docs provides aria-level on <li> — use it as authoritative source
+                aria = li_elem.get('aria-level')
+                if aria is not None:
+                    try:
+                        level = int(aria) + 2  # aria-level 1 → our level 3
+                    except (ValueError, TypeError):
+                        margin = get_li_margin(li_elem)
+                        level = base_level + margin_to_offset.get(margin, 0)
+                else:
+                    margin = get_li_margin(li_elem)
+                    level = base_level + margin_to_offset.get(margin, 0)
+
+                direct_text_parts = []
+                for child in li_elem.children:
+                    if isinstance(child, NavigableString):
+                        direct_text_parts.append(str(child))
+                    elif isinstance(child, Tag) and child.name not in ('ul', 'ol'):
+                        direct_text_parts.append(child.get_text(' '))
+                text = ' '.join(direct_text_parts).strip()
+
+                html_parts_li = []
+                for child in li_elem.children:
+                    if isinstance(child, NavigableString):
+                        html_parts_li.append(html_lib.escape(str(child)))
+                    elif isinstance(child, Tag) and child.name not in ('ul', 'ol'):
+                        html_parts_li.append(node_to_clean_html(child))
+                html_out = ''.join(html_parts_li).strip()
+
+                imgs = extract_images_from_node(li_elem)
+                if text or imgs:
+                    elements.append({
+                        'type': 'bullet', 'text': text, 'html': html_out or text,
+                        'bold_terms': extract_bold_terms(li_elem), 'level': level,
+                        'para_index': para_idx, 'images': imgs, 'is_empty': False,
+                    })
+                    all_images.extend(imgs)
+                    para_idx += 1
+                # Recurse into standard nested lists inside this li.
+                # Use process_element (not process_ul_in_order) so base_level is
+                # recomputed from the actual ancestor depth for each sub-list.
+                for nested in li_elem.find_all(['ul', 'ol'], recursive=False):
+                    process_element(nested)
+
+            def process_ul_in_order(ul_elem):
+                """Process a <ul>/<ol> in DOM order, handling Pages' <ul>-in-<ul> pattern."""
+                for child in ul_elem.children:
+                    if not isinstance(child, Tag):
+                        continue
+                    if child.name == 'li':
+                        process_li(child)
+                    elif child.name in ('ul', 'ol'):
+                        # Pages: <ul> directly inside <ul> — recurse in order
+                        process_ul_in_order(child)
+
+            process_ul_in_order(elem)
+
+        elif tag == 'p':
+            text = elem.get_text(' ', strip=True)
+            # Skip blank / non-breaking-space-only Word paragraphs
+            if not text or set(text) <= {'\xa0', ' ', '\u200b'}:
+                return
+            html_out = node_to_clean_html(elem)
+            imgs = extract_images_from_node(elem)
+
+            # Detect § bullet prefix (Word/Google Docs list items rendered as <p>)
+            is_section_bullet = text.startswith('§')
+            if is_section_bullet:
+                text = re.sub(r'^§\s*', '', text)
+                html_out = re.sub(r'§\s*', '', html_out, count=1)
+                # Compute level from margin-left (each indent level ≈ 48px)
+                style = elem.get('style', '') or ''
+                ml_match = re.search(r'margin-left\s*:\s*([\d.]+)\s*(pt|px)', style, re.I)
+                if ml_match:
+                    margin_val = float(ml_match.group(1))
+                    if ml_match.group(2).lower() == 'pt':
+                        margin_val *= 1.333  # pt → px
+                    level = max(3, round(margin_val / 48) + 2)
+                else:
+                    level = 4  # default sub-bullet
+                elem_type = 'bullet'
+            elif is_word_list_para(elem):
+                style = elem.get('style', '') or ''
+                level_m = re.search(r'level(\d+)', style)
+                level = int(level_m.group(1)) + 2 if level_m else 3
+                # Strip Word list prefix characters (·, •, –, etc.) from text/html
+                text = re.sub(r'^[\u00b7\u2022\u2013\u2014\-\*]\s*', '', text)
+                elem_type = 'bullet'
+            elif is_all_bold(elem) and len(text) < 120:
+                elem_type = 'heading'
+                level = 2
+            else:
+                elem_type = 'paragraph'
+                level = 0
+
+            if text or imgs:
+                elements.append({
+                    'type': elem_type, 'text': text, 'html': html_out or text,
+                    'bold_terms': extract_bold_terms(elem), 'level': level,
+                    'para_index': para_idx, 'images': imgs, 'is_empty': False,
+                })
+                all_images.extend(imgs)
+                para_idx += 1
+
+        elif tag in ('div', 'section', 'article', 'main', 'body', 'span',
+                     'header', 'footer', 'nav', 'aside', 'figure'):
+            for child in elem.children:
+                if isinstance(child, Tag):
+                    process_element(child)
+
+        elif tag in ('b', 'strong', 'i', 'em'):
+            # Google Docs wraps its entire clipboard payload in <b id="docs-internal-guid-...">
+            # Detect block-container usage (contains p/ul/div children) and recurse
+            has_block = any(
+                isinstance(c, Tag) and c.name in ('p', 'ul', 'ol', 'table', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6')
+                for c in elem.children
+            )
+            if has_block:
+                for child in elem.children:
+                    if isinstance(child, Tag):
+                        process_element(child)
+
+    body = soup.find('body')
+    root = body if body else soup
+    for child in root.children:
+        if isinstance(child, Tag):
+            process_element(child)
+
+    return elements, all_images
+
+
+def parse_and_chunk_html(html: str, client: anthropic.Anthropic, model: str = "claude-haiku-4-5-20251001") -> tuple[list, dict]:
+    """Parse clipboard HTML and chunk it semantically using Claude. Same pipeline as docx."""
+    elements, images = parse_html_to_elements(html)
+    if not elements:
+        raise ValueError("No content could be extracted from the pasted HTML")
+
+    claude_chunks, usage = call_claude_for_chunking(elements, images, None, client, model=model)
+    chunks = assemble_chunks(elements, claude_chunks)
+    return chunks, usage
 
 
 def strip_images_for_storage(chunks: list[dict]) -> list[dict]:
@@ -501,9 +861,11 @@ def _build_heuristic_chunk(chunk_idx, start, end, heading, elems):
     }
 
 
-def parse_and_chunk_docx(docx_path: str, img_dir: str, client: anthropic.Anthropic, rules_md_path: Optional[str] = None) -> list[dict]:
-    """Full pipeline: parse docx -> call Claude for chunks -> return assembled chunks."""
+def parse_and_chunk_docx(docx_path: str, img_dir: str, client: anthropic.Anthropic, rules_md_path: Optional[str] = None, model: str = "claude-haiku-4-5-20251001") -> tuple[list[dict], dict]:
+    """Full pipeline: parse docx -> call Claude for chunks -> return (assembled chunks, usage).
+    Returns (chunks, usage) where usage = {"input_tokens": int, "output_tokens": int}.
+    """
     elements, images = parse_docx(docx_path, img_dir)
-    claude_chunks = call_claude_for_chunking(elements, images, rules_md_path, client)
+    claude_chunks, usage = call_claude_for_chunking(elements, images, rules_md_path, client, model=model)
     chunks = assemble_chunks(elements, claude_chunks)
-    return strip_images_for_storage(chunks)
+    return chunks, usage

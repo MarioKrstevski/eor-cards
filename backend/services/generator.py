@@ -40,6 +40,51 @@ def parse_card_output(raw: str) -> tuple[list[dict], bool]:
     return cards, needs_review
 
 
+def regenerate_single_card(
+    client: anthropic.Anthropic,
+    chunk: dict,
+    existing_card_html: str,
+    rules_text: str,
+    extra_prompt: str | None = None,
+    model: str = DEFAULT_MODEL,
+) -> tuple[list[dict], bool, dict]:
+    """Regenerate one card from the same chunk, optionally guided by extra_prompt."""
+    topic = chunk.get('topic_path') or ''
+    topic_line = f"Curriculum context (for reference only): {topic}\n" if topic else ''
+
+    prompt = f"""{rules_text}
+
+---
+
+You are regenerating a single flashcard from the source content below.
+
+{topic_line}Section: {chunk.get('heading', '')}
+
+Source text:
+{chunk.get('source_text', '')}
+
+The existing card (improve or replace it):
+{existing_card_html}
+"""
+    if extra_prompt:
+        prompt += f"\nAdditional guidance: {extra_prompt}\n"
+
+    prompt += "\nGenerate ONE improved replacement card. Output exactly:\n1|cloze card text"
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=512,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = response.content[0].text.strip()
+    cards, needs_review = parse_card_output(raw)
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+    return cards, needs_review, usage
+
+
 def generate_cards_for_chunk(
     client: anthropic.Anthropic,
     chunk: dict,
@@ -51,13 +96,16 @@ def generate_cards_for_chunk(
     Returns (cards, needs_review, usage) where usage is
     {"input_tokens": int, "output_tokens": int}.
     """
+    topic = chunk.get('topic_path') or ''
+    topic_line = f"Curriculum context (for reference only): {topic}\n" if topic else ''
+
     prompt = f"""{rules_text}
 
 ---
 
 Now generate cards from the following study note content.
 
-Section: {chunk.get('heading', '')}
+{topic_line}Section: {chunk.get('heading', '')}
 
 Source text:
 {chunk.get('source_text', '')}

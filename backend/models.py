@@ -31,8 +31,6 @@ class Document(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     filename: Mapped[str] = mapped_column(String(300))
     original_name: Mapped[str] = mapped_column(String(300))
-    curriculum_id: Mapped[Optional[int]] = mapped_column(ForeignKey("curriculum.id"), nullable=True)
-    topic_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(default=utcnow)
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     chunks: Mapped[list["Chunk"]] = relationship("Chunk", back_populates="document", cascade="all, delete-orphan")
@@ -50,6 +48,9 @@ class Chunk(Base):
     source_html: Mapped[str] = mapped_column(Text)
     rule_subset: Mapped[list] = mapped_column(JSON, default=list)
     card_count: Mapped[int] = mapped_column(Integer, default=0)
+    topic_id: Mapped[Optional[int]] = mapped_column(ForeignKey("curriculum.id"), nullable=True)
+    topic_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    topic_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")
     cards: Mapped[list["Card"]] = relationship("Card", back_populates="chunk", cascade="all, delete-orphan")
 
@@ -100,3 +101,18 @@ class GenerationJob(Base):
     finished_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     document: Mapped["Document"] = relationship("Document", back_populates="jobs")
     rule_set: Mapped["RuleSet"] = relationship("RuleSet")
+
+
+class AIUsageLog(Base):
+    __tablename__ = "ai_usage_log"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    operation: Mapped[str] = mapped_column(String(50))  # chunking / topic_detection / card_generation / card_regen
+    model: Mapped[str] = mapped_column(String(100))
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    document_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # no FK constraint — entity may be deleted
+    chunk_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    card_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    job_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)

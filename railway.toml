@@ -2,7 +2,6 @@
 builder = "dockerfile"
 
 [deploy]
-startCommand = "uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/api/generate/models"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"

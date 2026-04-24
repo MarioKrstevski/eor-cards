@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import ConfirmModal from '../components/ConfirmModal';
+import { flattenTree, buildAggregatedCounts } from '../utils';
 import {
   getCurriculum,
+  getCurriculumCoverage,
   createCurriculumNode,
   updateCurriculumNode,
   deleteCurriculumNode,
@@ -9,28 +12,11 @@ import {
   updateRuleSet,
   deleteRuleSet,
   setDefaultRuleSet,
-  getDocuments,
-  updateDocument,
-  deleteDocument,
   exportCardsUrl,
 } from '../api';
-import type { CurriculumNode, RuleSet, Document } from '../types';
+import type { CurriculumNode, RuleSet } from '../types';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function flattenTree(nodes: CurriculumNode[]): CurriculumNode[] {
-  const result: CurriculumNode[] = [];
-  function walk(list: CurriculumNode[]) {
-    for (const node of list) {
-      result.push(node);
-      if (node.children.length > 0) walk(node.children);
-    }
-  }
-  walk(nodes);
-  return result;
-}
-
-// ─── CurriculumTreeNode ───────────────────────────────────────────────────────
+// ─── CurriculumTreeNode (editable, for Curriculum tab) ────────────────────────
 
 interface TreeNodeProps {
   node: CurriculumNode;
@@ -38,6 +24,8 @@ interface TreeNodeProps {
   onSelect: (node: CurriculumNode) => void;
   onRefresh: () => void;
   onDeselect: (id: number) => void;
+  onDeleteRequest: (id: number, name: string) => void;
+  defaultOpen?: boolean;
 }
 
 function CurriculumTreeNode({
@@ -46,7 +34,10 @@ function CurriculumTreeNode({
   onSelect,
   onRefresh,
   onDeselect,
+  onDeleteRequest,
+  defaultOpen = false,
 }: TreeNodeProps) {
+  const [open, setOpen] = useState(defaultOpen);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(node.name);
   const [addingChild, setAddingChild] = useState(false);
@@ -54,6 +45,7 @@ function CurriculumTreeNode({
   const [error, setError] = useState<string | null>(null);
 
   const isSelected = node.id === selectedId;
+  const hasChildren = node.children.length > 0;
 
   async function handleRename() {
     if (!renameValue.trim()) return;
@@ -66,14 +58,8 @@ function CurriculumTreeNode({
     }
   }
 
-  async function handleDelete() {
-    try {
-      await deleteCurriculumNode(node.id);
-      onDeselect(node.id);
-      onRefresh();
-    } catch {
-      setError('Delete failed');
-    }
+  function handleDelete() {
+    onDeleteRequest(node.id, node.name);
   }
 
   async function handleAddChild() {
@@ -88,97 +74,152 @@ function CurriculumTreeNode({
     }
   }
 
+  // Suppress unused warning
+  void onDeselect;
+
   return (
     <div>
       <div
         className={[
-          'group flex items-center gap-1 px-3 py-1.5 rounded-md cursor-pointer text-sm transition-colors',
-          isSelected
-            ? 'bg-violet-50 border-l-2 border-violet-500 pl-2.5'
-            : 'hover:bg-gray-100 border-l-2 border-transparent',
+          'group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cursor-pointer text-sm transition-colors duration-150',
+          isSelected ? 'bg-blue-50 text-blue-800' : 'hover:bg-gray-50 text-gray-700',
         ].join(' ')}
         onClick={() => onSelect(node)}
       >
+        <button
+          className="shrink-0 w-4 h-4 flex items-center justify-center text-gray-400 hover:text-gray-600 rounded transition-colors duration-150"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (hasChildren) setOpen((v) => !v);
+          }}
+        >
+          {hasChildren ? (
+            <svg
+              className={`w-3 h-3 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          ) : (
+            <span className="w-3 h-3 block" />
+          )}
+        </button>
+
         {renaming ? (
           <input
             autoFocus
-            className="flex-1 border border-gray-300 rounded-md px-2 py-0.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+            className="flex-1 border border-gray-200 rounded-lg px-2 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-600 transition-colors duration-150"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleRename();
-              if (e.key === 'Escape') { setRenaming(false); setRenameValue(node.name); }
+              if (e.key === 'Escape') {
+                setRenaming(false);
+                setRenameValue(node.name);
+              }
             }}
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <span className="flex-1 truncate text-gray-700">{node.name}</span>
+          <span className="flex-1 truncate text-xs leading-tight font-medium">{node.name}</span>
         )}
 
         {renaming ? (
           <>
             <button
-              onClick={(e) => { e.stopPropagation(); handleRename(); }}
-              className="text-xs text-green-600 hover:text-green-800 px-1 font-medium"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRename();
+              }}
+              className="text-xs text-green-600 hover:text-green-800 px-1 font-medium shrink-0"
             >
               OK
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); setRenaming(false); setRenameValue(node.name); }}
-              className="text-xs text-gray-500 hover:text-gray-700 px-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRenaming(false);
+                setRenameValue(node.name);
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 px-0.5 shrink-0"
             >
-              Cancel
+              x
             </button>
           </>
         ) : (
-          <span className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-1 transition-opacity">
+          <span className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity duration-150">
             <button
               title="Add child"
-              onClick={(e) => { e.stopPropagation(); setAddingChild((v) => !v); }}
-              className="p-0.5 text-xs text-violet-500 hover:text-violet-700 leading-none rounded"
+              onClick={(e) => {
+                e.stopPropagation();
+                setAddingChild((v) => !v);
+              }}
+              className="p-0.5 text-xs text-blue-600 hover:text-blue-800 rounded leading-none"
             >
               +
             </button>
             <button
               title="Rename"
-              onClick={(e) => { e.stopPropagation(); setRenaming(true); }}
-              className="p-0.5 text-xs text-gray-400 hover:text-gray-600 leading-none rounded"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRenaming(true);
+              }}
+              className="p-0.5 text-xs text-gray-400 hover:text-gray-600 rounded leading-none"
             >
               ✎
             </button>
             <button
               title="Delete"
-              onClick={(e) => { e.stopPropagation(); handleDelete(); }}
-              className="p-0.5 text-xs text-red-400 hover:text-red-600 leading-none rounded"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDelete();
+              }}
+              className="p-0.5 text-xs text-red-400 hover:text-red-600 rounded leading-none"
             >
-              ×
+              x
             </button>
           </span>
         )}
       </div>
 
-      {error && <p className="text-red-500 text-xs pl-4 mt-0.5">{error}</p>}
+      {error && <p className="text-red-500 text-xs pl-6 mt-0.5">{error}</p>}
 
       {addingChild && (
-        <div className="pl-6 flex items-center gap-1 mt-1">
+        <div className="pl-8 flex items-center gap-1 mt-1 mb-1">
           <input
             autoFocus
-            className="border border-gray-300 rounded-md px-2 py-0.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+            className="border border-gray-200 rounded-lg px-2 py-0.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-blue-600 transition-colors duration-150"
             placeholder="Child name"
             value={childName}
             onChange={(e) => setChildName(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAddChild();
-              if (e.key === 'Escape') { setAddingChild(false); setChildName(''); }
+              if (e.key === 'Escape') {
+                setAddingChild(false);
+                setChildName('');
+              }
             }}
           />
-          <button onClick={handleAddChild} className="text-xs text-green-600 hover:text-green-800 font-medium">OK</button>
-          <button onClick={() => { setAddingChild(false); setChildName(''); }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
+          <button onClick={handleAddChild} className="text-xs text-green-600 hover:text-green-800 font-medium">
+            OK
+          </button>
+          <button
+            onClick={() => {
+              setAddingChild(false);
+              setChildName('');
+            }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            x
+          </button>
         </div>
       )}
 
-      {node.children.length > 0 && (
-        <div className="pl-4">
+      {open && hasChildren && (
+        <div className="pl-3 border-l border-gray-200 ml-3">
           {node.children.map((child) => (
             <CurriculumTreeNode
               key={child.id}
@@ -187,10 +228,181 @@ function CurriculumTreeNode({
               onSelect={onSelect}
               onRefresh={onRefresh}
               onDeselect={onDeselect}
+              onDeleteRequest={onDeleteRequest}
             />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── CoverageNode (read-only, with card count badges) ─────────────────────────
+
+interface CoverageNodeProps {
+  node: CurriculumNode;
+  depth: number;
+  cardCounts: Record<string, number>;
+}
+
+function CoverageNode({ node, depth, cardCounts }: CoverageNodeProps) {
+  const [expanded, setExpanded] = useState(false);
+  const count = cardCounts[String(node.id)] ?? 0;
+  const hasCards = count > 0;
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-1.5 py-2 rounded-lg mx-1 transition-colors duration-150 hover:bg-gray-50"
+        style={{ paddingLeft: `${10 + depth * 14}px`, paddingRight: '8px' }}
+      >
+        {node.children.length > 0 ? (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors duration-150"
+          >
+            <svg
+              className={`h-3 w-3 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2.5}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        <span
+          className={`flex-1 text-xs truncate font-medium ${hasCards ? 'text-gray-800' : 'text-gray-400'}`}
+        >
+          {node.name}
+        </span>
+        {hasCards ? (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-green-50 text-green-700 font-semibold">
+            {count}
+          </span>
+        ) : (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-gray-50 text-gray-400">
+            0
+          </span>
+        )}
+      </div>
+      {expanded &&
+        node.children.map((child) => (
+          <CoverageNode key={child.id} node={child} depth={depth + 1} cardCounts={cardCounts} />
+        ))}
+    </div>
+  );
+}
+
+// ─── RuleSetModal ─────────────────────────────────────────────────────────────
+
+interface RuleSetModalProps {
+  initialName?: string;
+  initialContent?: string;
+  initialIsDefault?: boolean;
+  title: string;
+  onSave: (name: string, content: string, isDefault: boolean) => Promise<void>;
+  onClose: () => void;
+}
+
+function RuleSetModal({
+  initialName = '',
+  initialContent = '',
+  initialIsDefault = false,
+  title,
+  onSave,
+  onClose,
+}: RuleSetModalProps) {
+  const [name, setName] = useState(initialName);
+  const [content, setContent] = useState(initialContent);
+  const [isDefault, setIsDefault] = useState(initialIsDefault);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  async function handleSave() {
+    if (!name.trim()) { setError('Name is required'); return; }
+    setSaving(true);
+    try {
+      await onSave(name.trim(), content, isDefault);
+      onClose();
+    } catch {
+      setError('Save failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" aria-modal="true" role="dialog">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 flex flex-col" style={{ maxHeight: '90vh' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {/* Body */}
+        <div className="flex flex-col gap-4 px-6 py-5 overflow-y-auto flex-1">
+          {error && <p className="text-red-500 text-xs">{error}</p>}
+          <input
+            autoFocus
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Rule set name"
+          />
+          <textarea
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors resize-none flex-1"
+            style={{ minHeight: '400px' }}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Rule set content..."
+          />
+          <label className="flex items-center gap-2 text-xs cursor-pointer text-gray-600 font-medium">
+            <input
+              type="checkbox"
+              checked={isDefault}
+              onChange={(e) => setIsDefault(e.target.checked)}
+              className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+            />
+            Set as default rule set
+          </label>
+        </div>
+        {/* Footer */}
+        <div className="flex justify-end gap-2.5 px-6 py-4 border-t border-gray-200 shrink-0">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors disabled:opacity-60"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -200,37 +412,12 @@ function CurriculumTreeNode({
 interface RuleSetItemProps {
   rs: RuleSet;
   onRefresh: () => void;
+  onDeleteRequest: (id: number, name: string) => void;
 }
 
-function RuleSetItem({ rs, onRefresh }: RuleSetItemProps) {
-  const [editing, setEditing] = useState(false);
-  const [editName, setEditName] = useState(rs.name);
-  const [editContent, setEditContent] = useState(rs.content);
-  const [editIsDefault, setEditIsDefault] = useState(rs.is_default);
+function RuleSetItem({ rs, onRefresh, onDeleteRequest }: RuleSetItemProps) {
+  const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  async function handleSave() {
-    try {
-      await updateRuleSet(rs.id, {
-        name: editName.trim(),
-        content: editContent,
-        is_default: editIsDefault,
-      });
-      setEditing(false);
-      onRefresh();
-    } catch {
-      setError('Save failed');
-    }
-  }
-
-  async function handleDelete() {
-    try {
-      await deleteRuleSet(rs.id);
-      onRefresh();
-    } catch {
-      setError('Delete failed');
-    }
-  }
 
   async function handleSetDefault() {
     try {
@@ -241,179 +428,91 @@ function RuleSetItem({ rs, onRefresh }: RuleSetItemProps) {
     }
   }
 
-  if (editing) {
-    return (
-      <div className="border border-gray-200 rounded-md p-3 mb-2 bg-white">
-        {error && <p className="text-red-500 text-xs mb-2">{error}</p>}
-        <input
-          className="w-full border border-gray-300 rounded-md px-3 py-1.5 mb-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-          value={editName}
-          onChange={(e) => setEditName(e.target.value)}
-          placeholder="Rule set name"
-        />
-        <textarea
-          className="w-full border border-gray-300 rounded-md px-3 py-1.5 mb-2 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-          rows={6}
-          value={editContent}
-          onChange={(e) => setEditContent(e.target.value)}
-          placeholder="Rule set content"
-        />
-        <label className="flex items-center gap-1.5 text-xs mb-3 cursor-pointer text-gray-600">
-          <input
-            type="checkbox"
-            checked={editIsDefault}
-            onChange={(e) => setEditIsDefault(e.target.checked)}
-            className="rounded border-gray-300 text-violet-600 focus:ring-violet-400"
-          />
-          Is default
-        </label>
-        <div className="flex gap-2">
+  return (
+    <>
+      <div className="rounded-xl shadow-md border border-gray-200 p-5 mb-3 bg-white hover:shadow-lg transition-all duration-200">
+        {error && <p className="text-red-500 text-xs mb-1">{error}</p>}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-semibold text-gray-800 flex-1 truncate">{rs.name}</span>
+          {rs.is_default && (
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-green-50 text-green-700">
+              default
+            </span>
+          )}
+        </div>
+        <div className="flex gap-3 mt-3 flex-wrap">
+          {!rs.is_default && (
+            <button
+              onClick={handleSetDefault}
+              className="text-xs text-blue-700 hover:text-blue-900 font-medium transition-colors duration-150"
+            >
+              Set default
+            </button>
+          )}
           <button
-            onClick={handleSave}
-            className="text-xs bg-violet-600 text-white px-3 py-1.5 rounded-md hover:bg-violet-700 font-medium transition-colors"
+            onClick={() => setShowModal(true)}
+            className="text-xs text-gray-500 hover:text-gray-700 font-medium transition-colors duration-150"
           >
-            Save
+            Edit
           </button>
           <button
-            onClick={() => { setEditing(false); setError(null); }}
-            className="text-xs text-gray-600 hover:text-gray-800 px-2 py-1.5"
+            onClick={() => onDeleteRequest(rs.id, rs.name)}
+            className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors duration-150"
           >
-            Cancel
+            Delete
           </button>
         </div>
       </div>
-    );
-  }
-
-  return (
-    <div className="border border-gray-200 rounded-md p-3 mb-2 bg-white hover:border-gray-300 transition-colors">
-      {error && <p className="text-red-500 text-xs mb-1">{error}</p>}
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm font-medium text-gray-800 flex-1 truncate">{rs.name}</span>
-        {rs.is_default && (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">
-            default
-          </span>
-        )}
-      </div>
-      <div className="flex gap-2 mt-2 flex-wrap">
-        {!rs.is_default && (
-          <button
-            onClick={handleSetDefault}
-            className="text-xs text-violet-600 hover:text-violet-800 font-medium"
-          >
-            Set default
-          </button>
-        )}
-        <button
-          onClick={() => setEditing(true)}
-          className="text-xs text-gray-500 hover:text-gray-700 font-medium"
-        >
-          Edit
-        </button>
-        <button
-          onClick={handleDelete}
-          className="text-xs text-red-500 hover:text-red-700 font-medium"
-        >
-          Delete
-        </button>
-      </div>
-    </div>
+      {showModal && (
+        <RuleSetModal
+          title={`Edit "${rs.name}"`}
+          initialName={rs.name}
+          initialContent={rs.content}
+          initialIsDefault={rs.is_default}
+          onSave={async (name, content, isDefault) => {
+            await updateRuleSet(rs.id, { name, content, is_default: isDefault });
+            onRefresh();
+          }}
+          onClose={() => setShowModal(false)}
+        />
+      )}
+    </>
   );
 }
 
 // ─── NewRuleSetForm ───────────────────────────────────────────────────────────
 
-interface NewRuleSetFormProps {
-  onSaved: () => void;
-  onCancel: () => void;
-}
-
-function NewRuleSetForm({ onSaved, onCancel }: NewRuleSetFormProps) {
-  const [name, setName] = useState('');
-  const [content, setContent] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSave() {
-    if (!name.trim()) { setError('Name is required'); return; }
-    try {
-      await createRuleSet({ name: name.trim(), content, is_default: isDefault });
-      onSaved();
-    } catch {
-      setError('Create failed');
-    }
-  }
-
-  return (
-    <div className="border border-violet-200 rounded-md p-3 mb-2 bg-violet-50/30">
-      {error && <p className="text-red-500 text-xs mb-2">{error}</p>}
-      <input
-        autoFocus
-        className="w-full border border-gray-300 rounded-md px-3 py-1.5 mb-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Rule set name"
-      />
-      <textarea
-        className="w-full border border-gray-300 rounded-md px-3 py-1.5 mb-2 text-xs font-mono resize-y bg-white focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-        rows={6}
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        placeholder="Rule set content"
-      />
-      <label className="flex items-center gap-1.5 text-xs mb-3 cursor-pointer text-gray-600">
-        <input
-          type="checkbox"
-          checked={isDefault}
-          onChange={(e) => setIsDefault(e.target.checked)}
-          className="rounded border-gray-300 text-violet-600 focus:ring-violet-400"
-        />
-        Is default
-      </label>
-      <div className="flex gap-2">
-        <button
-          onClick={handleSave}
-          className="text-xs bg-violet-600 text-white px-3 py-1.5 rounded-md hover:bg-violet-700 font-medium transition-colors"
-        >
-          Save
-        </button>
-        <button
-          onClick={onCancel}
-          className="text-xs text-gray-600 hover:text-gray-800 px-2 py-1.5"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // ─── LibraryPage ──────────────────────────────────────────────────────────────
 
+type LibraryTab = 'curriculum' | 'rules' | 'coverage';
+
 export default function LibraryPage() {
-  // Curriculum state
+  const [activeTab, setActiveTab] = useState<LibraryTab>('curriculum');
+
   const [curriculum, setCurriculum] = useState<CurriculumNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<CurriculumNode | null>(null);
   const [addingRoot, setAddingRoot] = useState(false);
   const [rootName, setRootName] = useState('');
   const [curriculumError, setCurriculumError] = useState<string | null>(null);
+  const [treeSearch, setTreeSearch] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<{
+    type: 'curriculum' | 'ruleset';
+    id: number;
+    name: string;
+  } | null>(null);
 
-  // Rule sets state
   const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
   const [creatingRuleSet, setCreatingRuleSet] = useState(false);
   const [ruleSetError, setRuleSetError] = useState<string | null>(null);
 
-  // Documents state
-  const [documents, setDocuments] = useState<Document[]>([]);
-  const [docError, setDocError] = useState<string | null>(null);
-
-  // ── Data fetching ──
+  // Coverage tab
+  const [directCounts, setDirectCounts] = useState<Record<string, number>>({});
+  const [coverageLoading, setCoverageLoading] = useState(false);
 
   const fetchCurriculum = useCallback(async () => {
     try {
-      const data = await getCurriculum();
-      setCurriculum(data);
+      setCurriculum(await getCurriculum());
     } catch {
       setCurriculumError('Failed to load curriculum');
     }
@@ -421,29 +520,28 @@ export default function LibraryPage() {
 
   const fetchRuleSets = useCallback(async () => {
     try {
-      const data = await getRuleSets();
-      setRuleSets(data);
+      setRuleSets(await getRuleSets());
     } catch {
       setRuleSetError('Failed to load rule sets');
     }
   }, []);
 
-  const fetchDocuments = useCallback(async () => {
+  const fetchCoverage = useCallback(async () => {
+    setCoverageLoading(true);
     try {
-      const data = await getDocuments();
-      setDocuments(data);
+      setDirectCounts(await getCurriculumCoverage());
     } catch {
-      setDocError('Failed to load documents');
+      // silently fail
+    } finally {
+      setCoverageLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchCurriculum();
     fetchRuleSets();
-    fetchDocuments();
-  }, [fetchCurriculum, fetchRuleSets, fetchDocuments]);
-
-  // ── Curriculum helpers ──
+    fetchCoverage();
+  }, [fetchCurriculum, fetchRuleSets, fetchCoverage]);
 
   const handleDeselectIfDeleted = useCallback((id: number) => {
     setSelectedNode((prev) => (prev?.id === id ? null : prev));
@@ -461,259 +559,399 @@ export default function LibraryPage() {
     }
   }
 
-  // ── Document helpers ──
-
-  const handleAssignCurriculum = useCallback(async (docId: number, value: string) => {
-    const curriculum_id = value === '' ? null : Number(value);
+  async function handleDeleteConfirm() {
+    if (!confirmDelete) return;
+    const { type, id } = confirmDelete;
+    setConfirmDelete(null);
     try {
-      await updateDocument(docId, { curriculum_id });
-      fetchDocuments();
+      if (type === 'curriculum') {
+        await deleteCurriculumNode(id);
+        handleDeselectIfDeleted(id);
+        fetchCurriculum();
+      } else {
+        await deleteRuleSet(id);
+        fetchRuleSets();
+      }
     } catch {
-      setDocError('Update failed');
+      if (type === 'curriculum') setCurriculumError('Delete failed');
+      else setRuleSetError('Delete failed');
     }
-  }, [fetchDocuments]);
+  }
 
-  const handleDeleteDocument = useCallback(async (docId: number) => {
-    try {
-      await deleteDocument(docId);
-      fetchDocuments();
-    } catch {
-      setDocError('Delete failed');
-    }
-  }, [fetchDocuments]);
-
-  // ── Derived data ──
+  function handleExport() {
+    window.open(exportCardsUrl(selectedNode ? { curriculum_id: selectedNode.id } : undefined));
+  }
 
   const flatCurriculum = flattenTree(curriculum);
 
-  const filteredDocuments = selectedNode
-    ? documents.filter(
-        (doc) =>
-          doc.topic_path === selectedNode.path ||
-          doc.topic_path?.startsWith(selectedNode.path + ' > ')
-      )
-    : documents;
+  const searchResults = treeSearch.trim()
+    ? flatCurriculum.filter((n) => n.name.toLowerCase().includes(treeSearch.toLowerCase()))
+    : null;
 
-  // ── Export ──
+  // Aggregated counts for coverage tab
+  const aggregatedCounts = buildAggregatedCounts(curriculum, directCounts);
 
-  function handleExport() {
-    const url = exportCardsUrl(
-      selectedNode ? { curriculum_id: selectedNode.id } : undefined
-    );
-    window.open(url);
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
+  const tabClass = (tab: LibraryTab) =>
+    [
+      'px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-150',
+      activeTab === tab
+        ? 'bg-blue-50 text-blue-700'
+        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50',
+    ].join(' ');
 
   return (
-    <div className="flex h-[calc(100vh-48px)]">
-      {/* ── Left Panel ──────────────────────────────────────────────────── */}
-      <aside className="bg-white w-64 border-r border-gray-200 flex flex-col overflow-y-auto shrink-0">
-
-        {/* Curriculum section */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-              Curriculum
-            </h2>
-            <button
-              onClick={() => setAddingRoot((v) => !v)}
-              className="text-xs text-violet-600 hover:text-violet-800 font-medium transition-colors"
-              title="Add root node"
-            >
-              + Add root
-            </button>
-          </div>
-
-          {curriculumError && (
-            <p className="text-red-500 text-xs mb-1">{curriculumError}</p>
-          )}
-
-          {addingRoot && (
-            <div className="flex items-center gap-1 mb-2">
-              <input
-                autoFocus
-                className="border border-gray-300 rounded-md px-2 py-0.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-                placeholder="Node name"
-                value={rootName}
-                onChange={(e) => setRootName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddRoot();
-                  if (e.key === 'Escape') { setAddingRoot(false); setRootName(''); }
-                }}
-              />
-              <button onClick={handleAddRoot} className="text-xs text-green-600 hover:text-green-800 font-medium">OK</button>
-              <button onClick={() => { setAddingRoot(false); setRootName(''); }} className="text-xs text-gray-500 hover:text-gray-700">Cancel</button>
-            </div>
-          )}
-
-          {curriculum.length === 0 && !addingRoot && (
-            <p className="text-xs text-gray-400 italic py-1">No nodes yet</p>
-          )}
-
-          <div className="space-y-0.5 mt-1">
-            {curriculum.map((node) => (
-              <CurriculumTreeNode
-                key={node.id}
-                node={node}
-                selectedId={selectedNode?.id ?? null}
-                onSelect={setSelectedNode}
-                onRefresh={fetchCurriculum}
-                onDeselect={handleDeselectIfDeleted}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Rule Sets section */}
-        <div className="px-4 py-3 flex-1">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
-              Rule Sets
-            </h2>
-            <button
-              onClick={() => setCreatingRuleSet((v) => !v)}
-              className="text-xs text-violet-600 hover:text-violet-800 font-medium transition-colors"
-            >
-              + New
-            </button>
-          </div>
-
-          {ruleSetError && (
-            <p className="text-red-500 text-xs mb-1">{ruleSetError}</p>
-          )}
-
-          {creatingRuleSet && (
-            <NewRuleSetForm
-              onSaved={() => { setCreatingRuleSet(false); fetchRuleSets(); }}
-              onCancel={() => setCreatingRuleSet(false)}
+    <div className="flex h-[calc(100vh-56px)] flex-col overflow-hidden">
+      {/* Tab header — pill-style */}
+      <div className="bg-white border-b border-gray-200 flex items-center px-5 py-2.5 gap-1.5 shrink-0">
+        <button className={tabClass('curriculum')} onClick={() => setActiveTab('curriculum')}>
+          Curriculum
+        </button>
+        <button className={tabClass('rules')} onClick={() => setActiveTab('rules')}>
+          Rules
+        </button>
+        <button className={tabClass('coverage')} onClick={() => setActiveTab('coverage')}>
+          Coverage
+        </button>
+        <div className="flex-1" />
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-1.5 text-sm font-medium bg-blue-700 text-white px-4 py-2 rounded-lg hover:bg-blue-800 transition-colors duration-150"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
             />
-          )}
+          </svg>
+          Export cards
+        </button>
+      </div>
 
-          {ruleSets.length === 0 && !creatingRuleSet && (
-            <p className="text-xs text-gray-400 italic py-1">No rule sets yet</p>
-          )}
+      {/* Tab content */}
+      <div className="flex-1 overflow-hidden">
+        {/* ── CURRICULUM TAB ── */}
+        {activeTab === 'curriculum' && (
+          <div className="flex h-full">
+            {/* Left: curriculum tree */}
+            <aside className="bg-white w-64 flex flex-col shrink-0 overflow-hidden shadow-[1px_0_3px_0_rgba(0,0,0,0.04)]">
+              <div className="px-3 pt-4 pb-2.5 shrink-0">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                    Curriculum
+                  </h2>
+                  <button
+                    onClick={() => setAddingRoot((v) => !v)}
+                    className="text-xs text-blue-700 hover:text-blue-900 font-medium transition-colors duration-150"
+                    title="Add root node"
+                  >
+                    + Add
+                  </button>
+                </div>
 
-          {ruleSets.map((rs) => (
-            <RuleSetItem key={rs.id} rs={rs} onRefresh={fetchRuleSets} />
-          ))}
-        </div>
-      </aside>
+                {/* Search */}
+                <div className="relative">
+                  <svg
+                    className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                  <input
+                    className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-gray-50 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent focus:bg-white transition-colors duration-150"
+                    placeholder="Search topics..."
+                    value={treeSearch}
+                    onChange={(e) => setTreeSearch(e.target.value)}
+                  />
+                  {treeSearch && (
+                    <button
+                      onClick={() => setTreeSearch('')}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <svg
+                        className="w-3 h-3"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
+                      </svg>
+                    </button>
+                  )}
+                </div>
 
-      {/* ── Right Panel ─────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto bg-gray-50">
-        <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <h1 className="text-sm font-semibold text-gray-900">
-              {selectedNode ? selectedNode.path : 'All Documents'}
-            </h1>
-            {selectedNode && (
-              <p className="text-xs text-gray-400 mt-0.5">Filtered by curriculum node</p>
-            )}
+                {curriculumError && (
+                  <p className="text-red-500 text-xs mt-1">{curriculumError}</p>
+                )}
+
+                {addingRoot && (
+                  <div className="flex items-center gap-1 mt-2">
+                    <input
+                      autoFocus
+                      className="border border-gray-200 rounded-lg px-2 py-0.5 text-xs flex-1 focus:outline-none focus:ring-2 focus:ring-blue-600 transition-colors duration-150"
+                      placeholder="Node name"
+                      value={rootName}
+                      onChange={(e) => setRootName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleAddRoot();
+                        if (e.key === 'Escape') {
+                          setAddingRoot(false);
+                          setRootName('');
+                        }
+                      }}
+                    />
+                    <button
+                      onClick={handleAddRoot}
+                      className="text-xs text-green-600 font-medium"
+                    >
+                      OK
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAddingRoot(false);
+                        setRootName('');
+                      }}
+                      className="text-xs text-gray-400"
+                    >
+                      x
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="overflow-y-auto flex-1 px-1 pb-2">
+                {searchResults !== null ? (
+                  searchResults.length === 0 ? (
+                    <p className="text-xs text-gray-400 italic px-3 py-2">No matches</p>
+                  ) : (
+                    searchResults.map((node) => (
+                      <div
+                        key={node.id}
+                        onClick={() => setSelectedNode(node)}
+                        className={[
+                          'px-3 py-2 text-xs rounded-lg cursor-pointer truncate transition-colors duration-150 font-medium',
+                          selectedNode?.id === node.id
+                            ? 'bg-blue-50 text-blue-800'
+                            : 'text-gray-700 hover:bg-gray-50',
+                        ].join(' ')}
+                        style={{ paddingLeft: `${(node.level + 1) * 10}px` }}
+                        title={node.path}
+                      >
+                        {node.name}
+                      </div>
+                    ))
+                  )
+                ) : curriculum.length === 0 && !addingRoot ? (
+                  <p className="text-xs text-gray-400 italic px-3 py-2">No nodes yet</p>
+                ) : (
+                  curriculum.map((node) => (
+                    <CurriculumTreeNode
+                      key={node.id}
+                      node={node}
+                      selectedId={selectedNode?.id ?? null}
+                      onSelect={setSelectedNode}
+                      onRefresh={fetchCurriculum}
+                      onDeselect={handleDeselectIfDeleted}
+                      onDeleteRequest={(id, name) =>
+                        setConfirmDelete({ type: 'curriculum', id, name })
+                      }
+                      defaultOpen={false}
+                    />
+                  ))
+                )}
+              </div>
+            </aside>
+
+            {/* Right: selected node details */}
+            <main className="flex-1 overflow-y-auto bg-gray-50/50 p-8">
+              {selectedNode ? (
+                <div className="max-w-lg">
+                  <h1 className="text-sm font-semibold text-gray-900 mb-1">
+                    {selectedNode.path}
+                  </h1>
+                  <p className="text-xs text-gray-500 mb-5">Level {selectedNode.level}</p>
+                  <div className="bg-white rounded-xl shadow-md border border-gray-200 p-5">
+                    <p className="text-xs text-gray-500">
+                      <span className="font-semibold text-gray-700">ID:</span> {selectedNode.id}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      <span className="font-semibold text-gray-700">Children:</span>{' '}
+                      {selectedNode.children.length}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-2">
+                      <span className="font-semibold text-gray-700">Full path:</span>{' '}
+                      {selectedNode.path}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-40 gap-3 text-center">
+                  <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-gray-500 font-medium">
+                    Select a node to view details, or use the tree to add/rename/delete nodes.
+                  </p>
+                </div>
+              )}
+            </main>
           </div>
-          <div className="flex items-center gap-3">
-            {selectedNode && (
-              <button
-                onClick={() => setSelectedNode(null)}
-                className="text-xs text-gray-500 hover:text-gray-700 font-medium border border-gray-300 px-2.5 py-1 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                Clear filter
-              </button>
-            )}
-            <button
-              onClick={handleExport}
-              className="flex items-center gap-1.5 text-sm font-medium bg-violet-600 text-white px-3 py-1.5 rounded-md hover:bg-violet-700 transition-colors focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-1"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Export cards
-            </button>
+        )}
+
+        {/* ── RULES TAB ── */}
+        {activeTab === 'rules' && (
+          <div className="flex h-full">
+            <aside className="bg-white w-full max-w-md flex flex-col overflow-hidden shadow-[1px_0_3px_0_rgba(0,0,0,0.04)]">
+              <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
+                <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                  Rule Sets
+                </h2>
+                <button
+                  onClick={() => setCreatingRuleSet((v) => !v)}
+                  className="text-xs text-blue-700 hover:text-blue-900 font-medium transition-colors duration-150"
+                >
+                  + New
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 px-4 py-4">
+                {ruleSetError && (
+                  <p className="text-red-500 text-xs mb-1">{ruleSetError}</p>
+                )}
+                {creatingRuleSet && (
+                  <RuleSetModal
+                    title="New Rule Set"
+                    onSave={async (name, content, isDefault) => {
+                      await createRuleSet({ name, content, is_default: isDefault });
+                      fetchRuleSets();
+                    }}
+                    onClose={() => setCreatingRuleSet(false)}
+                  />
+                )}
+                {ruleSets.length === 0 && !creatingRuleSet && (
+                  <p className="text-xs text-gray-400 italic py-1">No rule sets yet</p>
+                )}
+                {ruleSets.map((rs) => (
+                  <RuleSetItem
+                    key={rs.id}
+                    rs={rs}
+                    onRefresh={fetchRuleSets}
+                    onDeleteRequest={(id, name) =>
+                      setConfirmDelete({ type: 'ruleset', id, name })
+                    }
+                  />
+                ))}
+              </div>
+            </aside>
+            <main className="flex-1 bg-gray-50/50 flex items-center justify-center">
+              <p className="text-sm text-gray-500 font-medium">Select a rule set to edit it.</p>
+            </main>
           </div>
-        </div>
+        )}
 
-        <div className="p-6">
-          {docError && (
-            <div className="mb-4 px-3 py-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md">
-              {docError}
-            </div>
-          )}
+        {/* ── COVERAGE TAB ── */}
+        {activeTab === 'coverage' && (
+          <div className="flex h-full">
+            <aside className="bg-white w-72 flex flex-col overflow-hidden shrink-0 shadow-[1px_0_3px_0_rgba(0,0,0,0.04)]">
+              <div className="px-4 py-3.5 border-b border-gray-200 shrink-0">
+                <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                  Topic Coverage
+                </h2>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Green = has cards, gray = none
+                </p>
+              </div>
+              <div className="flex-1 overflow-y-auto py-1.5">
+                {coverageLoading ? (
+                  <div className="flex items-center justify-center h-20 text-sm text-gray-400">
+                    Loading...
+                  </div>
+                ) : curriculum.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic px-3 py-2">No curriculum loaded.</p>
+                ) : (
+                  curriculum.map((node) => (
+                    <CoverageNode
+                      key={node.id}
+                      node={node}
+                      depth={0}
+                      cardCounts={aggregatedCounts}
+                    />
+                  ))
+                )}
+              </div>
+            </aside>
+            <main className="flex-1 overflow-y-auto bg-gray-50/50 p-8">
+              <div className="max-w-sm">
+                <h2 className="text-sm font-semibold text-gray-900 mb-1">Coverage summary</h2>
+                <p className="text-xs text-gray-500 mb-5 leading-relaxed">
+                  Shows how many active cards exist per topic (aggregated from child nodes).
+                </p>
+                <div className="bg-white rounded-xl shadow-md border border-gray-200 p-5 flex flex-col gap-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 font-medium">Total topics</span>
+                    <span className="font-semibold text-gray-800 tabular-nums">
+                      {flatCurriculum.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 font-medium">Topics with cards</span>
+                    <span className="font-semibold text-green-700 tabular-nums">
+                      {
+                        Object.values(aggregatedCounts).filter((v) => v > 0).length
+                      }
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 font-medium">Topics without cards</span>
+                    <span className="font-semibold text-gray-400 tabular-nums">
+                      {
+                        Object.values(aggregatedCounts).filter((v) => v === 0).length
+                      }
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </main>
+          </div>
+        )}
+      </div>
 
-          {filteredDocuments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 gap-2 text-center">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-10 w-10 text-gray-200"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-              <p className="text-sm text-gray-400">No documents found.</p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Document</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Topic path</th>
-                    <th className="px-4 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Chunks</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Assigned curriculum</th>
-                    <th className="px-4 py-2.5"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredDocuments.map((doc) => (
-                    <tr key={doc.id} className="hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors">
-                      <td className="px-4 py-3 font-medium text-gray-800 max-w-xs truncate">
-                        {doc.original_name}
-                      </td>
-                      <td className="px-4 py-3 text-gray-400 text-xs max-w-xs truncate">
-                        {doc.topic_path ?? '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-600 tabular-nums">
-                        {doc.chunk_count}
-                      </td>
-                      <td className="px-4 py-3">
-                        <select
-                          className="border border-gray-300 rounded-md px-2 py-1 text-sm w-full max-w-[200px] focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent bg-white"
-                          value={doc.curriculum_id ?? ''}
-                          onChange={(e) =>
-                            handleAssignCurriculum(doc.id, e.target.value)
-                          }
-                        >
-                          <option value="">— unassigned —</option>
-                          {flatCurriculum.map((node) => (
-                            <option key={node.id} value={node.id}>
-                              {node.path}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => handleDeleteDocument(doc.id)}
-                          className="text-red-400 hover:text-red-600 text-xs font-medium transition-colors"
-                          title="Delete document"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </main>
+      {confirmDelete && (
+        <ConfirmModal
+          title={
+            confirmDelete.type === 'curriculum'
+              ? 'Delete curriculum node?'
+              : 'Delete rule set?'
+          }
+          message={
+            confirmDelete.type === 'curriculum'
+              ? `"${confirmDelete.name}" and all its children will be permanently deleted.`
+              : `"${confirmDelete.name}" will be permanently deleted.`
+          }
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setConfirmDelete(null)}
+        />
+      )}
     </div>
   );
 }

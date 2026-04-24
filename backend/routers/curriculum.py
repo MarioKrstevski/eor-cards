@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
-from backend.models import Curriculum, Document
+from backend.models import Curriculum, Chunk, Card
 
 router = APIRouter()
 
@@ -79,13 +80,24 @@ def rename_node(node_id: int, body: CurriculumUpdate, db: Session = Depends(get_
     db.refresh(node)
     return node_to_dict(node)
 
+@router.get("/coverage")
+def get_coverage(db: Session = Depends(get_db)):
+    """Return card counts per curriculum topic_id (direct, not aggregated)."""
+    rows = (
+        db.query(Chunk.topic_id, func.count(Card.id).label("count"))
+        .join(Card, Card.chunk_id == Chunk.id)
+        .filter(Chunk.topic_id.isnot(None))
+        .group_by(Chunk.topic_id)
+        .all()
+    )
+    return {str(r.topic_id): r.count for r in rows}
+
+
 @router.delete("/{node_id}", status_code=204)
 def delete_node(node_id: int, db: Session = Depends(get_db)):
     node = db.get(Curriculum, node_id)
     if not node:
         raise HTTPException(404)
-    if db.query(Document).filter_by(curriculum_id=node_id).count():
-        raise HTTPException(400, "Cannot delete node with assigned documents")
     if db.query(Curriculum).filter_by(parent_id=node_id).count():
         raise HTTPException(400, "Cannot delete node with children")
     db.delete(node)
