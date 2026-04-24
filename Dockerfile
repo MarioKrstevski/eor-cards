@@ -23,9 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./backend/
 
 # Bundle seed data (copied to /app/data/ by entrypoint on first boot)
-RUN mkdir -p /app/seed
-COPY data/curriculum.json /app/seed/curriculum.json
-COPY data/ai-rules.md     /app/seed/ai-rules.md
+COPY seed/ /app/seed/
 
 # Copy entrypoint
 COPY entrypoint.sh /app/entrypoint.sh
