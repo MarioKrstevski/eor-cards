@@ -37,22 +37,21 @@ interface TopicNodeProps {
   cardCounts: Record<string, TopicCoverageStats>;
 }
 
-function topicCountStyle(count: number, isSelected: boolean): { text: string; badge: string } {
-  if (isSelected) return { text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800' };
-  if (count === 0)  return { text: 'text-gray-500',   badge: '' };
-  if (count <= 4)   return { text: 'text-amber-600',  badge: 'bg-amber-50 text-amber-700' };
-  if (count <= 14)  return { text: 'text-green-700',  badge: 'bg-green-50 text-green-700' };
-  return             { text: 'text-teal-700',   badge: 'bg-teal-50 text-teal-700' };
+function topicReviewStyle(active: number, unreviewed: number, isSelected: boolean) {
+  if (isSelected) return { text: 'text-blue-700', badge: 'bg-blue-100 text-blue-700' };
+  if (active === 0) return { text: 'text-gray-400', badge: '' };
+  if (unreviewed === 0) return { text: 'text-green-700', badge: 'bg-green-100 text-green-700' };
+  return { text: 'text-blue-600', badge: 'bg-blue-50 text-blue-700' };
 }
 
 function TopicNode({ node, depth, onSelect, selectedId, cardCounts }: TopicNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const stats = cardCounts[String(node.id)];
-  const count = stats?.total ?? 0;
   const active = stats?.active ?? 0;
   const unreviewed = stats?.unreviewed ?? 0;
+  const reviewed = active - unreviewed;
   const isSelected = node.id === selectedId;
-  const style = topicCountStyle(count, isSelected);
+  const style = topicReviewStyle(active, unreviewed, isSelected);
 
   return (
     <div>
@@ -86,15 +85,10 @@ function TopicNode({ node, depth, onSelect, selectedId, cardCounts }: TopicNodeP
           <span className="w-3 shrink-0" />
         )}
         <span className={`flex-1 text-xs truncate ${isSelected ? 'font-semibold' : 'font-medium'} ${style.text}`}>{node.name}</span>
-        {count > 0 && (
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${style.badge}`}>
-            {count}
-          </span>
-        )}
         {active > 0 && (
-          unreviewed === 0
-            ? <span className="text-[10px] text-green-500 font-semibold shrink-0">✓</span>
-            : <span className="text-[10px] text-gray-400 tabular-nums shrink-0">{unreviewed}/{active}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-semibold tabular-nums ${style.badge}`}>
+            {reviewed}/{active}
+          </span>
         )}
       </div>
       {expanded &&
@@ -1077,11 +1071,11 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                         ) : (
                           results.map((node) => {
                             const stats = aggregatedCounts[String(node.id)];
-                            const count = stats?.total ?? 0;
                             const active = stats?.active ?? 0;
                             const unreviewed = stats?.unreviewed ?? 0;
+                            const reviewed = active - unreviewed;
                             const isSelected = node.id === selectedTopicId;
-                            const style = topicCountStyle(count, isSelected);
+                            const style = topicReviewStyle(active, unreviewed, isSelected);
                             return (
                               <div
                                 key={node.id}
@@ -1094,16 +1088,11 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                                 title={node.path}
                               >
                                 <span className="truncate">{node.name}</span>
-                                <div className="flex items-center gap-1 shrink-0 ml-1.5">
-                                  {count > 0 && (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${style.badge}`}>{count}</span>
-                                  )}
-                                  {active > 0 && (
-                                    unreviewed === 0
-                                      ? <span className="text-[10px] text-green-500 font-semibold">✓</span>
-                                      : <span className="text-[10px] text-gray-400 tabular-nums">{unreviewed}/{active}</span>
-                                  )}
-                                </div>
+                                {active > 0 && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ml-1.5 font-semibold tabular-nums ${style.badge}`}>
+                                    {reviewed}/{active}
+                                  </span>
+                                )}
                               </div>
                             );
                           })
