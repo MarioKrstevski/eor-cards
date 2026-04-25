@@ -110,7 +110,7 @@ export default function CostFlash() {
     // Stagger all missiles over the first 65% of the duration
     const spread = DURATION * 0.65;
     for (let i = 0; i < MISSILE_COUNT; i++) {
-      const delay = MISSILE_COUNT === 1 ? 0 : (i / (MISSILE_COUNT - 1)) * spread;
+      const delay = i === 0 ? 0 : (i / (MISSILE_COUNT - 1)) * spread;
       launchMissile(sx, sy, ex, ey, delay);
     }
 
