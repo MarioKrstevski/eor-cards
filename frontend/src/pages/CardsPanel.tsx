@@ -37,21 +37,9 @@ interface CardsPanelProps {
 const columnHelper = createColumnHelper<Card>();
 
 // ── Cloze rendering utility ────────────────────────────────────────────────────
+// Just reveal the term — all bold/color styling comes from Claude's HTML output.
 function renderClozeHtml(html: string): string {
-  // Handle color-wrapped cloze: <b><span style="color:#HEX...">{{cX::term}}</span></b>
-  // or without <b>: <span style="color:#HEX...">{{cX::term}}</span>
-  // Extracts the color and uses it for the highlight border + text, with a tinted background.
-  let result = html.replace(
-    /(?:<b>)?<span\s+style="[^"]*color:\s*(#[0-9a-fA-F]{6})[^"]*"\s*>\{\{c\d+::([^}]+)\}\}<\/span>(?:<\/b>)?/g,
-    (_, color, term) =>
-      `<b><span style="color:${color};background:${color}1a;border-radius:3px;padding:1px 5px;border-bottom:2px solid ${color}">${term}</span></b>`
-  );
-  // Fallback for bare {{cX::term}} without color wrapper
-  result = result.replace(
-    /\{\{c\d+::([^}]+)\}\}/g,
-    '<span style="background:#fef3c7;border-radius:3px;padding:1px 4px;font-weight:600;color:#92400e;border-bottom:2px solid #f59e0b">$1</span>'
-  );
-  return result;
+  return html.replace(/\{\{c\d+::([^}]+)\}\}/g, '$1');
 }
 
 // Strips HTML tags but preserves {{c1::term}} cloze syntax
