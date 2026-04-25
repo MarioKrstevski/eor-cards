@@ -218,7 +218,7 @@ function TopicConfirmScreen({
   const { ai_costs } = uploadResult;
 
   return (
-    <div className="fixed inset-0 z-40 bg-white flex flex-col overflow-hidden">
+    <div className="fixed inset-x-0 bottom-0 top-11 z-40 bg-white flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.05)] shrink-0">
         <div>
