@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { SettingsProvider } from './context/SettingsContext';
 import { useSettings } from './context/SettingsContext';
@@ -6,20 +6,51 @@ import WorkspacePage from './pages/WorkspacePage';
 import LibraryPage from './pages/LibraryPage';
 import SettingsPopover from './components/SettingsPopover';
 import UsageModal from './components/UsageModal';
+import CostFlash from './components/CostFlash';
 import { getUsageSummary, getRuleSets } from './api';
 
 // Inner component so it can use the SettingsContext
 function AppInner() {
   const [showSettings, setShowSettings] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
-  const [totalCost, setTotalCost] = useState<number | null>(null);
+  const [displayedCost, setDisplayedCost] = useState<number | null>(null);
+  const prevCostRef = useRef(0);
   const { selectedRuleSetId, setSelectedRuleSetId } = useSettings();
 
   function refreshUsage() {
+    const prev = prevCostRef.current;
     getUsageSummary()
-      .then((s) => setTotalCost(s.total_cost_usd))
+      .then((s) => {
+        const next = s.total_cost_usd;
+        const diff = next - prev;
+        prevCostRef.current = next;
+        if (diff > 0.000001 && prev > 0) {
+          // Trigger flash animation; header updates via costProgress/costComplete events
+          window.dispatchEvent(new CustomEvent('costIncurred', {
+            detail: { cost: diff, prevTotal: prev, newTotal: next },
+          }));
+        } else {
+          setDisplayedCost(next);
+        }
+      })
       .catch(() => {});
   }
+
+  // Listen for animation progress → update header live
+  useEffect(() => {
+    function onProgress(e: Event) {
+      setDisplayedCost((e as CustomEvent<{ value: number }>).detail.value);
+    }
+    function onComplete(e: Event) {
+      setDisplayedCost((e as CustomEvent<{ newTotal: number }>).detail.newTotal);
+    }
+    window.addEventListener('costProgress', onProgress);
+    window.addEventListener('costComplete', onComplete);
+    return () => {
+      window.removeEventListener('costProgress', onProgress);
+      window.removeEventListener('costComplete', onComplete);
+    };
+  }, []);
 
   // Fetch total cost on mount
   useEffect(() => {
@@ -62,7 +93,7 @@ function AppInner() {
         <div className="flex-1" />
 
         {/* Usage badge */}
-        {totalCost != null && (
+        {displayedCost != null && (
           <button
             onClick={() => setShowUsage(true)}
             className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1 rounded-lg hover:bg-gray-50 transition-colors duration-150 tabular-nums font-medium"
@@ -81,7 +112,7 @@ function AppInner() {
                 d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
               />
             </svg>
-            ${totalCost.toFixed(2)}
+            ${displayedCost.toFixed(3)}
           </button>
         )}
 
@@ -115,6 +146,7 @@ function AppInner() {
 
       {showSettings && <SettingsPopover onClose={() => setShowSettings(false)} />}
       {showUsage && <UsageModal onClose={() => setShowUsage(false)} />}
+      <CostFlash />
     </div>
   );
 }

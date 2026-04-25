@@ -545,6 +545,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
       const result = await uploadDocument(file, chunkingModel);
       await fetchDocuments();
       setPendingUpload(result);
+      refreshUsage();
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
     } finally {
@@ -652,6 +653,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
       await fetchDocuments();
       setShowPasteModal(false);
       setPendingUpload(result);
+      refreshUsage();
     } catch (err: unknown) {
       setPasteError(err instanceof Error ? err.message : 'Failed to process pasted content.');
     } finally {

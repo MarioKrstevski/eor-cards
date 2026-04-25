@@ -592,6 +592,7 @@ export default function CardsPanel({
         setRegenPrompt('');
         if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
         else if (topicPath) fetchCards(null, topicPath);
+        refreshUsage?.();
       } catch (err) {
         setActionError(err instanceof Error ? err.message : 'Regeneration failed');
       } finally {
@@ -1051,7 +1052,7 @@ export default function CardsPanel({
               {/* Estimate result — elegant pill */}
               {estimate && (
                 <span className="inline-flex flex-col items-center px-3 py-1.5 rounded-full text-xs font-medium bg-green-50 text-green-700 leading-tight">
-                  <span className="font-semibold">~${estimate.estimated_cost_usd.toFixed(2)}</span>
+                  <span className="font-semibold">~${estimate.estimated_cost_usd.toFixed(3)}</span>
                   <span className="text-green-500 font-normal text-[10px]">
                     {estimate.estimated_input_tokens.toLocaleString()} in /{' '}
                     {estimate.estimated_output_tokens.toLocaleString()} out
@@ -1467,7 +1468,7 @@ export default function CardsPanel({
           title="Generate cards for whole document?"
           message={
             estimate
-              ? `This will generate cards for all chunks and replace any existing cards.\n\nEstimated cost: ~$${estimate.estimated_cost_usd.toFixed(2)} (${estimate.estimated_input_tokens.toLocaleString()} in / ${estimate.estimated_output_tokens.toLocaleString()} out tokens).`
+              ? `This will generate cards for all chunks and replace any existing cards.\n\nEstimated cost: ~$${estimate.estimated_cost_usd.toFixed(3)} (${estimate.estimated_input_tokens.toLocaleString()} in / ${estimate.estimated_output_tokens.toLocaleString()} out tokens).`
               : 'This will generate cards for all chunks and replace any existing cards.'
           }
           confirmLabel="Generate"
