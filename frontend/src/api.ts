@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type {
   CurriculumNode,
+  TopicCoverageStats,
   RuleSet,
   Document,
   UploadResult,
@@ -22,8 +23,8 @@ export async function getCurriculum(): Promise<CurriculumNode[]> {
   return res.data;
 }
 
-export async function getCurriculumCoverage(): Promise<Record<string, number>> {
-  const res = await http.get<Record<string, number>>('/curriculum/coverage');
+export async function getCurriculumCoverage(): Promise<Record<string, TopicCoverageStats>> {
+  const res = await http.get<Record<string, TopicCoverageStats>>('/curriculum/coverage');
   return res.data;
 }
 

@@ -14,7 +14,7 @@ import {
   setDefaultRuleSet,
   exportCardsUrl,
 } from '../api';
-import type { CurriculumNode, RuleSet } from '../types';
+import type { CurriculumNode, RuleSet, TopicCoverageStats } from '../types';
 
 // ─── CurriculumTreeNode (editable, for Curriculum tab) ────────────────────────
 
@@ -242,18 +242,18 @@ function CurriculumTreeNode({
 interface CoverageNodeProps {
   node: CurriculumNode;
   depth: number;
-  cardCounts: Record<string, number>;
+  cardCounts: Record<string, TopicCoverageStats>;
 }
 
 function CoverageNode({ node, depth, cardCounts }: CoverageNodeProps) {
   const [expanded, setExpanded] = useState(false);
-  const count = cardCounts[String(node.id)] ?? 0;
-  const hasCards = count > 0;
+  const stats = cardCounts[String(node.id)] ?? { total: 0, active: 0, rejected: 0, unreviewed: 0 };
+  const hasCards = stats.total > 0;
 
   return (
     <div>
       <div
-        className="flex items-center gap-1.5 py-2 rounded-lg mx-1 transition-colors duration-150 hover:bg-gray-50"
+        className="flex items-center gap-1.5 py-1.5 rounded-lg mx-1 transition-colors duration-150 hover:bg-gray-50"
         style={{ paddingLeft: `${10 + depth * 14}px`, paddingRight: '8px' }}
       >
         {node.children.length > 0 ? (
@@ -274,20 +274,29 @@ function CoverageNode({ node, depth, cardCounts }: CoverageNodeProps) {
         ) : (
           <span className="w-3 shrink-0" />
         )}
-        <span
-          className={`flex-1 text-xs truncate font-medium ${hasCards ? 'text-gray-800' : 'text-gray-400'}`}
-        >
+        <span className={`flex-1 text-xs truncate font-medium ${hasCards ? 'text-gray-800' : 'text-gray-400'}`}>
           {node.name}
         </span>
-        {hasCards ? (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-green-50 text-green-700 font-semibold">
-            {count}
+        <div className="flex items-center gap-1 shrink-0">
+          {/* Total / active */}
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums ${
+            hasCards ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-400'
+          }`}>
+            {stats.total}
           </span>
-        ) : (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full shrink-0 bg-gray-50 text-gray-400">
-            0
-          </span>
-        )}
+          {/* Unreviewed — amber, only if > 0 */}
+          {stats.unreviewed > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums bg-amber-50 text-amber-700" title="Unreviewed">
+              ●{stats.unreviewed}
+            </span>
+          )}
+          {/* Rejected — red, only if > 0 */}
+          {stats.rejected > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums bg-red-50 text-red-600" title="Rejected">
+              ✕{stats.rejected}
+            </span>
+          )}
+        </div>
       </div>
       {expanded &&
         node.children.map((child) => (
@@ -507,7 +516,7 @@ export default function LibraryPage() {
   const [ruleSetError, setRuleSetError] = useState<string | null>(null);
 
   // Coverage tab
-  const [directCounts, setDirectCounts] = useState<Record<string, number>>({});
+  const [directCounts, setDirectCounts] = useState<Record<string, TopicCoverageStats>>({});
   const [coverageLoading, setCoverageLoading] = useState(false);
 
   const fetchCurriculum = useCallback(async () => {
@@ -590,6 +599,17 @@ export default function LibraryPage() {
 
   // Aggregated counts for coverage tab
   const aggregatedCounts = buildAggregatedCounts(curriculum, directCounts);
+
+  // True totals — sum directCounts only to avoid double-counting aggregated parents
+  const coverageTotals = Object.values(directCounts).reduce(
+    (acc, s) => ({
+      total: acc.total + s.total,
+      active: acc.active + s.active,
+      rejected: acc.rejected + s.rejected,
+      unreviewed: acc.unreviewed + s.unreviewed,
+    }),
+    { total: 0, active: 0, rejected: 0, unreviewed: 0 }
+  );
 
   const tabClass = (tab: LibraryTab) =>
     [
@@ -878,7 +898,7 @@ export default function LibraryPage() {
                   Topic Coverage
                 </h2>
                 <p className="text-[10px] text-gray-400 mt-1">
-                  Green = has cards, gray = none
+                  ●amber = unreviewed &nbsp;✕red = rejected
                 </p>
               </div>
               <div className="flex-1 overflow-y-auto py-1.5">
@@ -901,33 +921,67 @@ export default function LibraryPage() {
               </div>
             </aside>
             <main className="flex-1 overflow-y-auto bg-gray-50/50 p-8">
-              <div className="max-w-sm">
-                <h2 className="text-sm font-semibold text-gray-900 mb-1">Coverage summary</h2>
-                <p className="text-xs text-gray-500 mb-5 leading-relaxed">
-                  Shows how many active cards exist per topic (aggregated from child nodes).
-                </p>
-                <div className="bg-white rounded-xl shadow-md border border-gray-200 p-5 flex flex-col gap-3">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500 font-medium">Total topics</span>
-                    <span className="font-semibold text-gray-800 tabular-nums">
-                      {flatCurriculum.length}
-                    </span>
+              <div className="max-w-sm flex flex-col gap-5">
+                {/* Card totals */}
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900 mb-3">Card totals</h2>
+                  <div className="bg-white rounded-xl shadow-md border border-gray-200 p-5 flex flex-col gap-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Total cards</span>
+                      <span className="font-semibold text-gray-800 tabular-nums">{coverageTotals.total}</span>
+                    </div>
+                    <div className="h-px bg-gray-100" />
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Active</span>
+                      <span className="font-semibold text-green-700 tabular-nums">{coverageTotals.active}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5 text-gray-500 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                        Pending review
+                      </span>
+                      <span className="font-semibold text-amber-700 tabular-nums">{coverageTotals.unreviewed}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5 text-gray-500 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />
+                        Rejected
+                      </span>
+                      <span className="font-semibold text-red-600 tabular-nums">{coverageTotals.rejected}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500 font-medium">Topics with cards</span>
-                    <span className="font-semibold text-green-700 tabular-nums">
-                      {
-                        Object.values(aggregatedCounts).filter((v) => v > 0).length
-                      }
-                    </span>
+                </div>
+
+                {/* Topic coverage */}
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900 mb-3">Topic coverage</h2>
+                  <div className="bg-white rounded-xl shadow-md border border-gray-200 p-5 flex flex-col gap-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Total topics</span>
+                      <span className="font-semibold text-gray-800 tabular-nums">{flatCurriculum.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Topics with cards</span>
+                      <span className="font-semibold text-green-700 tabular-nums">
+                        {Object.values(aggregatedCounts).filter((s) => s.total > 0).length}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Topics without cards</span>
+                      <span className="font-semibold text-gray-400 tabular-nums">
+                        {Object.values(aggregatedCounts).filter((s) => s.total === 0).length}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-500 font-medium">Topics without cards</span>
-                    <span className="font-semibold text-gray-400 tabular-nums">
-                      {
-                        Object.values(aggregatedCounts).filter((v) => v === 0).length
-                      }
-                    </span>
+                </div>
+
+                {/* Legend */}
+                <div className="text-[10px] text-gray-400 flex flex-col gap-1">
+                  <p>Counts in the tree are aggregated from child nodes.</p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="flex items-center gap-1"><span className="px-1.5 py-0.5 rounded-full bg-green-50 text-green-700 font-semibold">12</span> total</span>
+                    <span className="flex items-center gap-1"><span className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">●3</span> unreviewed</span>
+                    <span className="flex items-center gap-1"><span className="px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 font-semibold">✕1</span> rejected</span>
                   </div>
                 </div>
               </div>

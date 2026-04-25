@@ -1,4 +1,4 @@
-import type { CurriculumNode } from './types';
+import type { CurriculumNode, TopicCoverageStats } from './types';
 
 export function flattenTree(nodes: CurriculumNode[]): CurriculumNode[] {
   const result: CurriculumNode[] = [];
@@ -23,16 +23,30 @@ export function subtreeIds(node: CurriculumNode): Set<number> {
   return ids;
 }
 
-/** Builds a Record<nodeId, aggregatedCardCount> for the full tree. */
+const emptyCoverage = (): TopicCoverageStats => ({ total: 0, active: 0, rejected: 0, unreviewed: 0 });
+
+function addCoverage(a: TopicCoverageStats, b: TopicCoverageStats): TopicCoverageStats {
+  return {
+    total: a.total + b.total,
+    active: a.active + b.active,
+    rejected: a.rejected + b.rejected,
+    unreviewed: a.unreviewed + b.unreviewed,
+  };
+}
+
+/** Builds a Record<nodeId, aggregatedCoverageStats> for the full tree. */
 export function buildAggregatedCounts(
   tree: CurriculumNode[],
-  directCounts: Record<string, number>
-): Record<string, number> {
-  const result: Record<string, number> = {};
-  function walkOnce(node: CurriculumNode): number {
-    const direct = directCounts[String(node.id)] ?? 0;
-    const childSum = node.children.reduce((sum, c) => sum + walkOnce(c), 0);
-    result[String(node.id)] = direct + childSum;
+  directCounts: Record<string, TopicCoverageStats>
+): Record<string, TopicCoverageStats> {
+  const result: Record<string, TopicCoverageStats> = {};
+  function walkOnce(node: CurriculumNode): TopicCoverageStats {
+    const direct = directCounts[String(node.id)] ?? emptyCoverage();
+    const childSum = node.children.reduce<TopicCoverageStats>(
+      (acc, c) => addCoverage(acc, walkOnce(c)),
+      emptyCoverage()
+    );
+    result[String(node.id)] = addCoverage(direct, childSum);
     return result[String(node.id)];
   }
   tree.forEach((root) => walkOnce(root));

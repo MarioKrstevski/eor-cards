@@ -9,6 +9,15 @@ export interface CurriculumNode {
   children: CurriculumNode[];
 }
 
+// ─── Coverage ─────────────────────────────────────────────────────────────────
+
+export interface TopicCoverageStats {
+  total: number;
+  active: number;
+  rejected: number;
+  unreviewed: number;
+}
+
 // ─── Rule Sets ────────────────────────────────────────────────────────────────
 
 export interface RuleSet {

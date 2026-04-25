@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
-from backend.models import Curriculum, Chunk, Card
+from backend.models import Curriculum, Chunk, Card, CardStatus
 
 router = APIRouter()
 
@@ -82,15 +82,32 @@ def rename_node(node_id: int, body: CurriculumUpdate, db: Session = Depends(get_
 
 @router.get("/coverage")
 def get_coverage(db: Session = Depends(get_db)):
-    """Return card counts per curriculum topic_id (direct, not aggregated)."""
+    """Return card breakdown per curriculum topic_id (direct, not aggregated)."""
     rows = (
-        db.query(Chunk.topic_id, func.count(Card.id).label("count"))
+        db.query(
+            Chunk.topic_id,
+            func.count(Card.id).label("total"),
+            func.sum(case((Card.status == CardStatus.active, 1), else_=0)).label("active"),
+            func.sum(case((Card.status == CardStatus.rejected, 1), else_=0)).label("rejected"),
+            func.sum(case(
+                ((Card.status == CardStatus.active) & ~Card.is_reviewed, 1),
+                else_=0,
+            )).label("unreviewed"),
+        )
         .join(Card, Card.chunk_id == Chunk.id)
         .filter(Chunk.topic_id.isnot(None))
         .group_by(Chunk.topic_id)
         .all()
     )
-    return {str(r.topic_id): r.count for r in rows}
+    return {
+        str(r.topic_id): {
+            "total": r.total,
+            "active": r.active,
+            "rejected": r.rejected,
+            "unreviewed": r.unreviewed,
+        }
+        for r in rows
+    }
 
 
 @router.delete("/{node_id}", status_code=204)

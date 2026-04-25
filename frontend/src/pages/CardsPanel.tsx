@@ -634,7 +634,7 @@ export default function CardsPanel({
             );
           }
           return (
-            <span className="block text-sm text-gray-800 whitespace-normal break-words leading-relaxed font-mono text-xs">
+            <span className="block text-sm text-gray-800 whitespace-normal break-words leading-relaxed">
               {stripHtmlKeepCloze(card.front_html)}
             </span>
           );
