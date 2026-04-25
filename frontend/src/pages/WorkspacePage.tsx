@@ -561,6 +561,41 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     setTimeout(() => pasteAreaRef.current?.focus(), 50);
   }
 
+  function applyHtml(rawHtml: string, extraImages: { type: string; dataUri: string }[] = []) {
+    let finalHtml = rawHtml;
+    if (extraImages.length > 0) {
+      const parser2 = new DOMParser();
+      const doc2 = parser2.parseFromString(rawHtml, 'text/html');
+      let imgIdx = 0;
+      doc2.querySelectorAll('img').forEach((img) => {
+        const src = img.getAttribute('src') || '';
+        if (!src.startsWith('data:') && imgIdx < extraImages.length) {
+          img.setAttribute('src', extraImages[imgIdx++].dataUri);
+        }
+      });
+      if (imgIdx < extraImages.length) {
+        doc2.querySelectorAll('li').forEach((li) => {
+          if (imgIdx >= extraImages.length) return;
+          const txt = li.textContent?.replace(/[\s\u00a0\u200b]/g, '') ?? '';
+          if (txt === '') {
+            const imgEl = doc2.createElement('img');
+            imgEl.setAttribute('src', extraImages[imgIdx++].dataUri);
+            li.appendChild(imgEl);
+          }
+        });
+      }
+      finalHtml = doc2.body.innerHTML;
+    }
+    const parser = new DOMParser();
+    const parsed = parser.parseFromString(finalHtml, 'text/html');
+    const heading = parsed.querySelector('h1, h2, h3, h4, h5, h6, b, strong');
+    const detected = heading?.textContent?.trim() ?? '';
+    if (detected && detected.length < 100) {
+      setPasteName((prev) => prev || detected);
+    }
+    setPastedHtml(finalHtml);
+  }
+
   function handlePaste(e: React.ClipboardEvent) {
     e.preventDefault();
     const html = e.clipboardData.getData('text/html');
@@ -574,48 +609,6 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
       if (item.kind === 'file' && item.type.startsWith('image/')) {
         imageItems.push(item);
       }
-    }
-
-    function applyHtml(rawHtml: string, extraImages: { type: string; dataUri: string }[] = []) {
-      let finalHtml = rawHtml;
-      if (extraImages.length > 0) {
-        // Pages omits <img> from HTML — find empty <li> elements (image placeholders) and inject
-        const parser2 = new DOMParser();
-        const doc2 = parser2.parseFromString(rawHtml, 'text/html');
-        let imgIdx = 0;
-
-        // First pass: replace any existing non-data: img src
-        doc2.querySelectorAll('img').forEach((img) => {
-          const src = img.getAttribute('src') || '';
-          if (!src.startsWith('data:') && imgIdx < extraImages.length) {
-            img.setAttribute('src', extraImages[imgIdx++].dataUri);
-          }
-        });
-
-        // Second pass: Pages puts images as empty <li> — inject into whitespace-only items
-        if (imgIdx < extraImages.length) {
-          doc2.querySelectorAll('li').forEach((li) => {
-            if (imgIdx >= extraImages.length) return;
-            const txt = li.textContent?.replace(/[\s\u00a0\u200b]/g, '') ?? '';
-            if (txt === '') {
-              const imgEl = doc2.createElement('img');
-              imgEl.setAttribute('src', extraImages[imgIdx++].dataUri);
-              li.appendChild(imgEl);
-            }
-          });
-        }
-
-        finalHtml = doc2.body.innerHTML;
-      }
-
-      const parser = new DOMParser();
-      const parsed = parser.parseFromString(finalHtml, 'text/html');
-      const heading = parsed.querySelector('h1, h2, h3, h4, h5, h6, b, strong');
-      const detected = heading?.textContent?.trim() ?? '';
-      if (detected && detected.length < 100) {
-        setPasteName((prev) => prev || detected);
-      }
-      setPastedHtml(finalHtml);
     }
 
     if (html && html.trim()) {
@@ -641,6 +634,32 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const wrapped = escaped.split('\n').map((l) => `<p>${l || '&nbsp;'}</p>`).join('\n');
       setPastedHtml(wrapped);
+    }
+  }
+
+  async function handlePasteButton() {
+    try {
+      const items = await navigator.clipboard.read();
+      let html = '';
+      let text = '';
+      for (const item of items) {
+        if (item.types.includes('text/html')) {
+          html = await (await item.getType('text/html')).text();
+        }
+        if (item.types.includes('text/plain')) {
+          text = await (await item.getType('text/plain')).text();
+        }
+      }
+      if (html && html.trim()) {
+        applyHtml(html);
+      } else if (text && text.trim()) {
+        const escaped = text
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const wrapped = escaped.split('\n').map((l) => `<p>${l || '&nbsp;'}</p>`).join('\n');
+        setPastedHtml(wrapped);
+      }
+    } catch {
+      // Permission denied or API not supported — user can still use Ctrl+V
     }
   }
 
@@ -1432,6 +1451,12 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                   </svg>
                   <p className="text-sm font-medium text-gray-500">Click here, then paste</p>
                   <p className="text-xs text-gray-400 mt-1">Cmd+V / Ctrl+V — copies from Word, Google Docs, web pages</p>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handlePasteButton(); }}
+                    className="mt-3 px-4 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                  >
+                    Paste
+                  </button>
                 </div>
               ) : (
                 <div className="border border-gray-200 rounded-lg overflow-hidden">
