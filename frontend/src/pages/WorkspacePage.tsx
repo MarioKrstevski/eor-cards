@@ -1233,6 +1233,9 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                               <p className="text-[10px] text-gray-400 mt-0.5">
                                 {doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''} · {doc.total_cards ?? 0} card{(doc.total_cards ?? 0) !== 1 ? 's' : ''}
                               </p>
+                              <p className="text-[10px] text-gray-400 mt-0.5">
+                                {doc.filename.startsWith('paste_') ? 'Paste' : 'Doc'} · {new Date(doc.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                              </p>
                             </div>
                             <button
                               onClick={(e) => {
@@ -1240,7 +1243,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                                 openChunkView(doc.id);
                               }}
                               title="Browse chunks"
-                              className="shrink-0 text-gray-300 hover:text-blue-600 transition-colors duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                              className="shrink-0 text-gray-400 hover:text-blue-600 transition-colors duration-150"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
