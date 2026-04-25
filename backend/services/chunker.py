@@ -448,6 +448,11 @@ def parse_html_to_elements(html: str) -> tuple[list, list]:
     if frag_match:
         html = frag_match.group(1)
 
+    # Strip Word conditional comments: <!--[if ...]>...<![endif]--> and <![if ...]>...<![endif]>
+    # These wrap bullet markers (○, ■, etc.) and leak as plain text through html.parser
+    html = re.sub(r'<!--\[if[^\]]*\]>.*?<!\[endif\]-->', '', html, flags=re.DOTALL)
+    html = re.sub(r'<!\[if[^\]]*\]>.*?<!\[endif\]>', '', html, flags=re.DOTALL)
+
     # Pre-parse CSS class → left-margin mapping (used for Pages indent detection)
     css_margins = _parse_css_class_margins(html)
 

@@ -54,6 +54,9 @@ interface CardTileProps {
   cardIndex: number;
   onEdit: (card: Card) => void;
   onReject: (id: number) => void;
+  onRestore: (id: number) => void;
+  onDelete: (id: number) => void;
+  onChunkInfo: (card: Card) => void;
   editingId: number | null;
   editFrontHtml: string;
   setEditFrontHtml: (v: string) => void;
@@ -61,6 +64,16 @@ interface CardTileProps {
   setEditTags: (v: string) => void;
   onSave: (id: number) => void;
   onCancel: () => void;
+  regenId: number | null;
+  setRegenId: (id: number | null) => void;
+  regenPrompt: string;
+  setRegenPrompt: (v: string) => void;
+  regenLoading: boolean;
+  onRegen: (id: number) => void;
+  selected: boolean;
+  onToggleSelect: (id: number) => void;
+  tagsPopoverId: number | null;
+  setTagsPopoverId: (id: number | null) => void;
 }
 
 function CardTile({
@@ -68,6 +81,9 @@ function CardTile({
   cardIndex,
   onEdit,
   onReject,
+  onRestore,
+  onDelete,
+  onChunkInfo,
   editingId,
   editFrontHtml,
   setEditFrontHtml,
@@ -75,16 +91,40 @@ function CardTile({
   setEditTags,
   onSave,
   onCancel,
+  regenId,
+  setRegenId,
+  regenPrompt,
+  setRegenPrompt,
+  regenLoading,
+  onRegen,
+  selected,
+  onToggleSelect,
+  tagsPopoverId,
+  setTagsPopoverId,
 }: CardTileProps) {
   const isEditing = editingId === card.id;
   const isRejected = card.status === 'rejected';
+  const isRegenOpen = regenId === card.id;
+  const isTagsOpen = tagsPopoverId === card.id;
 
   return (
     <div
-      className={`bg-white rounded-xl border border-gray-200 shadow-md hover:shadow-lg transition-all duration-200 flex flex-col${isRejected ? ' opacity-60 bg-gray-50' : ''}`}
+      className={`relative bg-white rounded-xl border transition-all duration-200 flex flex-col ${
+        selected ? 'border-blue-400 shadow-md ring-1 ring-blue-300' : 'border-gray-200 shadow-md hover:shadow-lg'
+      }${isRejected ? ' opacity-60 bg-gray-50' : ''}`}
     >
+      {/* Checkbox — top-left corner */}
+      <div className="absolute top-2.5 left-2.5 z-10">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(card.id)}
+          className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+        />
+      </div>
+
       {/* Card body */}
-      <div className="p-5 flex-1" style={{ minHeight: '100px' }}>
+      <div className="pt-8 px-5 pb-4 flex-1" style={{ minHeight: '100px' }}>
         {isEditing ? (
           <div className="flex flex-col gap-2.5">
             <textarea
@@ -122,61 +162,129 @@ function CardTile({
       </div>
 
       {/* Bottom strip */}
-      <div className="border-t border-gray-50 px-4 py-2.5 bg-gray-50/30 rounded-b-xl flex items-center gap-2">
-        <span className="text-xs text-gray-400 tabular-nums shrink-0 font-medium">#{cardIndex}</span>
-        <div className="flex items-center gap-1 flex-1 overflow-hidden">
-          {card.tags.slice(0, 2).map((tag) => (
-            <span
-              key={tag}
-              className="bg-gray-100 text-gray-500 text-[11px] px-2 py-0.5 rounded-full truncate max-w-[80px] font-medium"
-            >
-              {tag}
-            </span>
-          ))}
+      <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/30 rounded-b-xl flex items-center gap-1.5">
+        {/* # + info button */}
+        <div className="flex flex-col items-center shrink-0">
+          <span className={`text-xs tabular-nums ${!card.is_reviewed ? 'font-bold text-gray-900' : 'font-normal text-gray-400'}`}>
+            #{cardIndex}
+          </span>
+          <button
+            onClick={() => onChunkInfo(card)}
+            title="View source chunk"
+            className="text-gray-300 hover:text-blue-500 transition-colors duration-150"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </button>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+
+        {/* Tags */}
+        <div className="flex-1 overflow-hidden relative">
+          {card.tags.length === 0 ? (
+            <span className="text-gray-300 text-xs">—</span>
+          ) : (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); setTagsPopoverId(isTagsOpen ? null : card.id); }}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors duration-150 ${
+                  isTagsOpen ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 hover:border-blue-300'
+                }`}
+              >
+                <span className="truncate max-w-[80px]">{card.tags[0]}</span>
+                {card.tags.length > 1 && (
+                  <span className="bg-blue-200 text-blue-700 rounded px-1 text-[10px] font-semibold">+{card.tags.length - 1}</span>
+                )}
+              </button>
+              {isTagsOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setTagsPopoverId(null)} />
+                  <div className="absolute left-0 bottom-full mb-1 z-20 bg-white border border-gray-200 rounded-xl shadow-xl p-2.5 min-w-[160px] max-w-[240px]">
+                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5 px-1">Tags</p>
+                    <div className="flex flex-wrap gap-1">
+                      {card.tags.map((tag) => (
+                        <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-medium">{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Status dot + actions */}
+        <div className="relative flex items-center gap-0.5 shrink-0">
           <span
-            className={`w-2 h-2 rounded-full ${
-              isRejected ? 'bg-red-400' : card.is_reviewed ? 'bg-gray-300' : 'bg-amber-400'
-            }`}
+            className={`w-1.5 h-1.5 rounded-full mr-0.5 ${isRejected ? 'bg-red-400' : card.is_reviewed ? 'bg-gray-300' : 'bg-amber-400'}`}
             title={isRejected ? 'Rejected' : card.is_reviewed ? 'Reviewed' : 'Not reviewed'}
           />
-          <button
-            onClick={() => onEdit(card)}
-            title="Edit card"
-            className="p-1 text-gray-400 hover:text-blue-700 transition-colors duration-150 rounded-lg"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-3.5 w-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z"
-              />
+          {/* Edit */}
+          <button onClick={() => onEdit(card)} title="Edit" className="p-1 text-gray-400 hover:text-blue-700 transition-colors duration-150 rounded-lg hover:bg-blue-50">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
             </svg>
           </button>
+          {/* Regenerate */}
           <button
-            onClick={() => onReject(card.id)}
-            title="Reject card"
-            className="p-1 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded-lg"
+            onClick={() => { setRegenId(isRegenOpen ? null : card.id); setRegenPrompt(''); }}
+            title="Regenerate"
+            className={`p-1 transition-colors duration-150 rounded-lg ${isRegenOpen ? 'text-amber-600 bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'}`}
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-3.5 w-3.5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
+          {/* Reject / Restore */}
+          {isRejected ? (
+            <button onClick={() => onRestore(card.id)} title="Restore" className="p-1 text-green-500 hover:text-green-700 transition-colors duration-150 rounded-lg hover:bg-green-50">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 11l3 3L22 4M3 12a9 9 0 1018 0 9 9 0 00-18 0z" />
+              </svg>
+            </button>
+          ) : (
+            <button onClick={() => onReject(card.id)} title="Reject" className="p-1 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded-lg hover:bg-red-50">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+          {/* Delete */}
+          <button onClick={() => onDelete(card.id)} title="Delete permanently" className="p-1 text-gray-400 hover:text-red-700 transition-colors duration-150 rounded-lg hover:bg-red-50">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" />
+            </svg>
+          </button>
+
+          {/* Regen popover */}
+          {isRegenOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setRegenId(null)} />
+              <div className="absolute right-0 bottom-full mb-1 z-20 bg-white border border-amber-200 rounded-xl shadow-xl p-3 w-52">
+                <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide mb-2">Regenerate card</p>
+                <input
+                  className="w-full text-xs border border-amber-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-amber-50/40 transition-colors duration-150 mb-2"
+                  placeholder="Optional guidance..."
+                  value={regenPrompt}
+                  onChange={(e) => setRegenPrompt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') onRegen(card.id); if (e.key === 'Escape') setRegenId(null); }}
+                  autoFocus
+                />
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => onRegen(card.id)}
+                    disabled={regenLoading}
+                    className="flex-1 px-2.5 py-1.5 text-xs font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors duration-150"
+                  >
+                    {regenLoading ? 'Working...' : 'Regenerate'}
+                  </button>
+                  <button onClick={() => setRegenId(null)} className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-150">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -1227,6 +1335,9 @@ export default function CardsPanel({
                   cardIndex={row.original.card_number}
                   onEdit={startEdit}
                   onReject={handleReject}
+                  onRestore={handleRestore}
+                  onDelete={(id) => setConfirmDeleteCardId(id)}
+                  onChunkInfo={(card) => setChunkInfoCard(card)}
                   editingId={editingId}
                   editFrontHtml={editFrontHtml}
                   setEditFrontHtml={setEditFrontHtml}
@@ -1234,6 +1345,16 @@ export default function CardsPanel({
                   setEditTags={setEditTags}
                   onSave={saveEdit}
                   onCancel={cancelEdit}
+                  regenId={regenId}
+                  setRegenId={setRegenId}
+                  regenPrompt={regenPrompt}
+                  setRegenPrompt={setRegenPrompt}
+                  regenLoading={regenLoading}
+                  onRegen={handleRegen}
+                  selected={selectedIds.has(row.original.id)}
+                  onToggleSelect={(id) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
+                  tagsPopoverId={tagsPopoverId}
+                  setTagsPopoverId={setTagsPopoverId}
                 />
               ))}
             </div>
