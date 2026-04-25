@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import type { ColumnSizingState, PaginationState } from '@tanstack/react-table';
 import {
   useReactTable,
@@ -32,6 +33,7 @@ interface CardsPanelProps {
   topicPath?: string | null;
   refreshKey?: number;
   refreshUsage?: () => void;
+  onReviewChange?: () => void;
   onGoToChunk?: (documentId: number, chunkId: number) => void;
 }
 
@@ -64,16 +66,10 @@ interface CardTileProps {
   setEditTags: (v: string) => void;
   onSave: (id: number) => void;
   onCancel: () => void;
-  regenId: number | null;
-  setRegenId: (id: number | null) => void;
-  regenPrompt: string;
-  setRegenPrompt: (v: string) => void;
   regenLoading: boolean;
-  onRegen: (id: number) => void;
+  onRegen: (id: number, prompt: string) => void;
   selected: boolean;
   onToggleSelect: (id: number) => void;
-  tagsPopoverId: number | null;
-  setTagsPopoverId: (id: number | null) => void;
 }
 
 function CardTile({
@@ -91,21 +87,26 @@ function CardTile({
   setEditTags,
   onSave,
   onCancel,
-  regenId,
-  setRegenId,
-  regenPrompt,
-  setRegenPrompt,
   regenLoading,
   onRegen,
   selected,
   onToggleSelect,
-  tagsPopoverId,
-  setTagsPopoverId,
 }: CardTileProps) {
   const isEditing = editingId === card.id;
   const isRejected = card.status === 'rejected';
-  const isRegenOpen = regenId === card.id;
-  const isTagsOpen = tagsPopoverId === card.id;
+
+  // Portal-based popovers to escape overflow clipping
+  type PopoverKind = 'tags' | 'actions' | 'regen';
+  const [popover, setPopover] = useState<{ kind: PopoverKind; x: number; y: number } | null>(null);
+  const [regenPrompt, setRegenPrompt] = useState('');
+
+  function openPopover(kind: PopoverKind, e: React.MouseEvent<HTMLButtonElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopover(prev => prev?.kind === kind ? null : { kind, x: rect.left, y: rect.bottom + 4 });
+    if (kind === 'regen') setRegenPrompt('');
+  }
+
+  function closePopover() { setPopover(null); }
 
   return (
     <div
@@ -113,18 +114,16 @@ function CardTile({
         selected ? 'border-blue-400 shadow-md ring-1 ring-blue-300' : 'border-gray-200 shadow-md hover:shadow-lg'
       }${isRejected ? ' opacity-60 bg-gray-50' : ''}`}
     >
-      {/* Checkbox — top-left corner */}
-      <div className="absolute top-2.5 left-2.5 z-10">
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={() => onToggleSelect(card.id)}
-          className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
-        />
-      </div>
+      {/* Checkbox — absolute top-left */}
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => onToggleSelect(card.id)}
+        className="absolute top-3 left-3 z-10 rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+      />
 
-      {/* Card body */}
-      <div className="pt-8 px-5 pb-4 flex-1" style={{ minHeight: '100px' }}>
+      {/* Card body — same top padding as checkbox, left pad to clear checkbox */}
+      <div className="pt-3 pl-8 pr-5 pb-4 flex-1" style={{ minHeight: '100px' }}>
         {isEditing ? (
           <div className="flex flex-col gap-2.5">
             <textarea
@@ -139,154 +138,133 @@ function CardTile({
               placeholder="tag1, tag2"
             />
             <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => onSave(card.id)}
-                className="px-3 py-1.5 text-xs font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors duration-150"
-              >
-                Save
-              </button>
-              <button
-                onClick={onCancel}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150"
-              >
-                Cancel
-              </button>
+              <button onClick={() => onSave(card.id)} className="px-3 py-1.5 text-xs font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors duration-150">Save</button>
+              <button onClick={onCancel} className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150">Cancel</button>
             </div>
           </div>
         ) : (
-          <div
-            className="text-sm leading-relaxed text-gray-800"
-            dangerouslySetInnerHTML={{ __html: renderClozeHtml(card.front_html) }}
-          />
+          <div className="text-sm leading-relaxed text-gray-800" dangerouslySetInnerHTML={{ __html: renderClozeHtml(card.front_html) }} />
         )}
       </div>
 
       {/* Bottom strip */}
       <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/30 rounded-b-xl flex items-center gap-1.5">
-        {/* # + info button */}
-        <div className="flex flex-col items-center shrink-0">
-          <span className={`text-xs tabular-nums ${!card.is_reviewed ? 'font-bold text-gray-900' : 'font-normal text-gray-400'}`}>
-            #{cardIndex}
-          </span>
-          <button
-            onClick={() => onChunkInfo(card)}
-            title="View source chunk"
-            className="text-gray-300 hover:text-blue-500 transition-colors duration-150"
-          >
+        {/* # + info */}
+        <div className="flex flex-col items-center shrink-0 gap-0.5">
+          <span className={`text-xs tabular-nums ${!card.is_reviewed ? 'font-bold text-gray-900' : 'font-normal text-gray-400'}`}>#{cardIndex}</span>
+          <button onClick={() => onChunkInfo(card)} title="View source chunk" className="text-gray-300 hover:text-blue-500 transition-colors duration-150">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </button>
         </div>
 
-        {/* Tags */}
-        <div className="flex-1 overflow-hidden relative">
+        {/* Tags button */}
+        <div className="flex-1 overflow-hidden">
           {card.tags.length === 0 ? (
             <span className="text-gray-300 text-xs">—</span>
           ) : (
-            <>
-              <button
-                onClick={(e) => { e.stopPropagation(); setTagsPopoverId(isTagsOpen ? null : card.id); }}
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors duration-150 ${
-                  isTagsOpen ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 hover:border-blue-300'
-                }`}
-              >
-                <span className="truncate max-w-[80px]">{card.tags[0]}</span>
-                {card.tags.length > 1 && (
-                  <span className="bg-blue-200 text-blue-700 rounded px-1 text-[10px] font-semibold">+{card.tags.length - 1}</span>
-                )}
-              </button>
-              {isTagsOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setTagsPopoverId(null)} />
-                  <div className="absolute left-0 bottom-full mb-1 z-20 bg-white border border-gray-200 rounded-xl shadow-xl p-2.5 min-w-[160px] max-w-[240px]">
-                    <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5 px-1">Tags</p>
-                    <div className="flex flex-wrap gap-1">
-                      {card.tags.map((tag) => (
-                        <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-medium">{tag}</span>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </>
+            <button
+              onClick={(e) => openPopover('tags', e)}
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors duration-150 ${
+                popover?.kind === 'tags' ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100 hover:border-blue-300'
+              }`}
+            >
+              <span className="truncate max-w-[80px]">{card.tags[0]}</span>
+              {card.tags.length > 1 && <span className="bg-blue-200 text-blue-700 rounded px-1 text-[10px] font-semibold">+{card.tags.length - 1}</span>}
+            </button>
           )}
         </div>
 
-        {/* Status dot + actions */}
-        <div className="relative flex items-center gap-0.5 shrink-0">
-          <span
-            className={`w-1.5 h-1.5 rounded-full mr-0.5 ${isRejected ? 'bg-red-400' : card.is_reviewed ? 'bg-gray-300' : 'bg-amber-400'}`}
-            title={isRejected ? 'Rejected' : card.is_reviewed ? 'Reviewed' : 'Not reviewed'}
-          />
-          {/* Edit */}
-          <button onClick={() => onEdit(card)} title="Edit" className="p-1 text-gray-400 hover:text-blue-700 transition-colors duration-150 rounded-lg hover:bg-blue-50">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
-            </svg>
-          </button>
-          {/* Regenerate */}
-          <button
-            onClick={() => { setRegenId(isRegenOpen ? null : card.id); setRegenPrompt(''); }}
-            title="Regenerate"
-            className={`p-1 transition-colors duration-150 rounded-lg ${isRegenOpen ? 'text-amber-600 bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'}`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-          {/* Reject / Restore */}
-          {isRejected ? (
-            <button onClick={() => onRestore(card.id)} title="Restore" className="p-1 text-green-500 hover:text-green-700 transition-colors duration-150 rounded-lg hover:bg-green-50">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 11l3 3L22 4M3 12a9 9 0 1018 0 9 9 0 00-18 0z" />
-              </svg>
-            </button>
-          ) : (
-            <button onClick={() => onReject(card.id)} title="Reject" className="p-1 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded-lg hover:bg-red-50">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
-          {/* Delete */}
-          <button onClick={() => onDelete(card.id)} title="Delete permanently" className="p-1 text-gray-400 hover:text-red-700 transition-colors duration-150 rounded-lg hover:bg-red-50">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" />
-            </svg>
-          </button>
+        {/* Status dot */}
+        <span
+          className={`w-1.5 h-1.5 rounded-full shrink-0 ${isRejected ? 'bg-red-400' : card.is_reviewed ? 'bg-gray-300' : 'bg-amber-400'}`}
+          title={isRejected ? 'Rejected' : card.is_reviewed ? 'Reviewed' : 'Not reviewed'}
+        />
 
-          {/* Regen popover */}
-          {isRegenOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setRegenId(null)} />
-              <div className="absolute right-0 bottom-full mb-1 z-20 bg-white border border-amber-200 rounded-xl shadow-xl p-3 w-52">
-                <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide mb-2">Regenerate card</p>
-                <input
-                  className="w-full text-xs border border-amber-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-amber-50/40 transition-colors duration-150 mb-2"
-                  placeholder="Optional guidance..."
-                  value={regenPrompt}
-                  onChange={(e) => setRegenPrompt(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') onRegen(card.id); if (e.key === 'Escape') setRegenId(null); }}
-                  autoFocus
-                />
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => onRegen(card.id)}
-                    disabled={regenLoading}
-                    className="flex-1 px-2.5 py-1.5 text-xs font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors duration-150"
-                  >
-                    {regenLoading ? 'Working...' : 'Regenerate'}
-                  </button>
-                  <button onClick={() => setRegenId(null)} className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-150">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        {/* ⋯ actions button */}
+        <button
+          onClick={(e) => openPopover('actions', e)}
+          className={`p-1 rounded-lg transition-colors duration-150 ${popover?.kind === 'actions' ? 'bg-gray-100 text-gray-700' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
+          title="Actions"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+            <circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>
+          </svg>
+        </button>
       </div>
+
+      {/* Portal popovers */}
+      {popover && createPortal(
+        <>
+          <div className="fixed inset-0 z-40" onClick={closePopover} />
+          {popover.kind === 'tags' && (
+            <div className="fixed z-50 bg-white border border-gray-200 rounded-xl shadow-xl p-2.5 min-w-[160px] max-w-[240px]"
+                 style={{ top: popover.y, left: popover.x }}>
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5 px-1">Tags</p>
+              <div className="flex flex-wrap gap-1">
+                {card.tags.map(tag => (
+                  <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-medium">{tag}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {popover.kind === 'actions' && (
+            <div className="fixed z-50 bg-white border border-gray-200 rounded-xl shadow-xl py-1 min-w-[160px]"
+                 style={{ top: popover.y, left: Math.max(8, popover.x - 120) }}>
+              <button onClick={() => { closePopover(); onEdit(card); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors duration-150">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" /></svg>
+                Edit
+              </button>
+              <button onClick={(e) => { openPopover('regen', e); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 transition-colors duration-150">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                Regenerate
+              </button>
+              {isRejected ? (
+                <button onClick={() => { closePopover(); onRestore(card.id); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-green-700 hover:bg-green-50 transition-colors duration-150">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 11l3 3L22 4M3 12a9 9 0 1018 0 9 9 0 00-18 0z" /></svg>
+                  Restore
+                </button>
+              ) : (
+                <button onClick={() => { closePopover(); onReject(card.id); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors duration-150">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  Reject
+                </button>
+              )}
+              <div className="my-1 border-t border-gray-100" />
+              <button onClick={() => { closePopover(); onDelete(card.id); }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-700 hover:bg-red-50 transition-colors duration-150">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" /></svg>
+                Delete
+              </button>
+            </div>
+          )}
+          {popover.kind === 'regen' && (
+            <div className="fixed z-50 bg-white border border-amber-200 rounded-xl shadow-xl p-3 w-52"
+                 style={{ top: popover.y, left: Math.max(8, popover.x - 180) }}>
+              <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide mb-2">Regenerate card</p>
+              <input
+                className="w-full text-xs border border-amber-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-amber-50/40 mb-2"
+                placeholder="Optional guidance..."
+                value={regenPrompt}
+                onChange={(e) => setRegenPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { closePopover(); onRegen(card.id, regenPrompt); } if (e.key === 'Escape') closePopover(); }}
+                autoFocus
+              />
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => { closePopover(); onRegen(card.id, regenPrompt); }}
+                  disabled={regenLoading}
+                  className="flex-1 px-2.5 py-1.5 text-xs font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors duration-150"
+                >
+                  {regenLoading ? 'Working...' : 'Regenerate'}
+                </button>
+                <button onClick={closePopover} className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+              </div>
+            </div>
+          )}
+        </>,
+        document.body
+      )}
     </div>
   );
 }
@@ -297,6 +275,7 @@ export default function CardsPanel({
   topicPath,
   refreshKey,
   refreshUsage,
+  onReviewChange,
   onGoToChunk,
 }: CardsPanelProps) {
   const { selectedModel, selectedRuleSetId } = useSettings();
@@ -601,13 +580,13 @@ export default function CardsPanel({
   );
 
   const handleRegen = useCallback(
-    async (id: number) => {
+    async (id: number, prompt?: string) => {
       setRegenLoading(true);
       setActionError(null);
       try {
         await regenerateCard(id, {
           model: selectedModel,
-          prompt: regenPrompt || undefined,
+          prompt: (prompt ?? regenPrompt) || undefined,
         });
         setRegenId(null);
         setRegenPrompt('');
@@ -629,10 +608,11 @@ export default function CardsPanel({
       await bulkMarkReviewed(ids);
       setSelectedIds(new Set());
       setCards(prev => prev.map(c => ids.includes(c.id) ? { ...c, is_reviewed: true } : c));
+      onReviewChange?.();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to mark as reviewed');
     }
-  }, [selectedIds]);
+  }, [selectedIds, onReviewChange]);
 
   // ── Filtered cards ─────────────────────────────────────────────────────────
   const filteredCards = useMemo(
@@ -1326,8 +1306,30 @@ export default function CardsPanel({
             </p>
           </div>
         ) : viewMode === 'cards' ? (
-          <div className="p-5 overflow-y-auto flex-1">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="overflow-y-auto flex-1 flex flex-col">
+            {/* Select all bar */}
+            <div className="px-5 pt-4 pb-2 shrink-0">
+              <label className="flex items-center gap-2 cursor-pointer w-fit">
+                <input
+                  type="checkbox"
+                  checked={table.getRowModel().rows.length > 0 && table.getRowModel().rows.every(r => selectedIds.has(r.original.id))}
+                  ref={el => { if (el) el.indeterminate = !table.getRowModel().rows.every(r => selectedIds.has(r.original.id)) && table.getRowModel().rows.some(r => selectedIds.has(r.original.id)); }}
+                  onChange={() => {
+                    const pageIds = table.getRowModel().rows.map(r => r.original.id);
+                    const allSelected = pageIds.every(id => selectedIds.has(id));
+                    setSelectedIds(prev => {
+                      const n = new Set(prev);
+                      if (allSelected) pageIds.forEach(id => n.delete(id));
+                      else pageIds.forEach(id => n.add(id));
+                      return n;
+                    });
+                  }}
+                  className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+                />
+                <span className="text-xs text-gray-500 font-medium select-none">Select all</span>
+              </label>
+            </div>
+            <div className="px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {table.getRowModel().rows.map((row) => (
                 <CardTile
                   key={row.original.id}
@@ -1345,16 +1347,10 @@ export default function CardsPanel({
                   setEditTags={setEditTags}
                   onSave={saveEdit}
                   onCancel={cancelEdit}
-                  regenId={regenId}
-                  setRegenId={setRegenId}
-                  regenPrompt={regenPrompt}
-                  setRegenPrompt={setRegenPrompt}
                   regenLoading={regenLoading}
                   onRegen={handleRegen}
                   selected={selectedIds.has(row.original.id)}
                   onToggleSelect={(id) => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
-                  tagsPopoverId={tagsPopoverId}
-                  setTagsPopoverId={setTagsPopoverId}
                 />
               ))}
             </div>

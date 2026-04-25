@@ -1313,6 +1313,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
           topicPath={cardsPanelTopicPath}
           refreshKey={cardsRefreshKey}
           refreshUsage={refreshUsage}
+          onReviewChange={() => { refreshCoverage(); fetchDocuments(); }}
           onGoToChunk={handleGoToChunk}
         />
       </div>
