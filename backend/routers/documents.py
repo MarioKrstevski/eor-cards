@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db, SessionLocal
 from backend.models import Document, Chunk, Curriculum, AIUsageLog, Card, CardStatus
-from backend.config import DATA_DIR, ANTHROPIC_API_KEY, compute_cost, DEFAULT_MODEL
+from backend.config import DATA_DIR, ANTHROPIC_API_KEY, compute_cost, DEFAULT_MODEL, DEFAULT_CHUNKING_MODEL
 from backend.services.chunker import parse_and_chunk_docx, parse_and_chunk_html
 from backend.services.topic_detector import detect_chunk_topics
 import anthropic
@@ -143,7 +143,7 @@ async def upload_document(file: UploadFile = File(...), chunking_model: str = "c
 
     if curriculum_nodes:
         try:
-            mappings, td_usage = detect_chunk_topics(client, chunk_inputs, curriculum_nodes, DEFAULT_MODEL)
+            mappings, td_usage = detect_chunk_topics(client, chunk_inputs, curriculum_nodes, DEFAULT_CHUNKING_MODEL)
             td_cost = compute_cost(DEFAULT_MODEL, td_usage["input_tokens"], td_usage["output_tokens"])
             topic_detection_cost = td_cost
             db.add(AIUsageLog(
@@ -255,7 +255,7 @@ async def paste_document(body: PasteDocumentRequest, db: Session = Depends(get_d
 
         if curriculum_nodes:
             try:
-                mappings, td_usage = detect_chunk_topics(client, chunk_inputs, curriculum_nodes, DEFAULT_MODEL)
+                mappings, td_usage = detect_chunk_topics(client, chunk_inputs, curriculum_nodes, DEFAULT_CHUNKING_MODEL)
                 td_cost = compute_cost(DEFAULT_MODEL, td_usage["input_tokens"], td_usage["output_tokens"])
                 topic_detection_cost = td_cost
                 db.add(AIUsageLog(
