@@ -849,7 +849,7 @@ export default function CardsPanel({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     enableColumnResizing: true,
-    columnResizeMode: 'onEnd',
+    columnResizeMode: 'onChange',
     autoResetPageIndex: true,
     state: { columnSizing, pagination },
     onColumnSizingChange: (updater) => {

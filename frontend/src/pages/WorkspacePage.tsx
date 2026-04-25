@@ -47,7 +47,10 @@ function topicCountStyle(count: number, isSelected: boolean): { text: string; ba
 
 function TopicNode({ node, depth, onSelect, selectedId, cardCounts }: TopicNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
-  const count = cardCounts[String(node.id)]?.total ?? 0;
+  const stats = cardCounts[String(node.id)];
+  const count = stats?.total ?? 0;
+  const active = stats?.active ?? 0;
+  const unreviewed = stats?.unreviewed ?? 0;
   const isSelected = node.id === selectedId;
   const style = topicCountStyle(count, isSelected);
 
@@ -87,6 +90,11 @@ function TopicNode({ node, depth, onSelect, selectedId, cardCounts }: TopicNodeP
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${style.badge}`}>
             {count}
           </span>
+        )}
+        {active > 0 && (
+          unreviewed === 0
+            ? <span className="text-[10px] text-green-500 font-semibold shrink-0">✓</span>
+            : <span className="text-[10px] text-gray-400 tabular-nums shrink-0">{unreviewed}/{active}</span>
         )}
       </div>
       {expanded &&
@@ -1068,7 +1076,10 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                           <p className="text-xs text-gray-400 italic px-3 py-2">No matches</p>
                         ) : (
                           results.map((node) => {
-                            const count = aggregatedCounts[String(node.id)]?.total ?? 0;
+                            const stats = aggregatedCounts[String(node.id)];
+                            const count = stats?.total ?? 0;
+                            const active = stats?.active ?? 0;
+                            const unreviewed = stats?.unreviewed ?? 0;
                             const isSelected = node.id === selectedTopicId;
                             const style = topicCountStyle(count, isSelected);
                             return (
@@ -1083,9 +1094,16 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                                 title={node.path}
                               >
                                 <span className="truncate">{node.name}</span>
-                                {count > 0 && (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded shrink-0 ml-1.5 font-medium ${style.badge}`}>{count}</span>
-                                )}
+                                <div className="flex items-center gap-1 shrink-0 ml-1.5">
+                                  {count > 0 && (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${style.badge}`}>{count}</span>
+                                  )}
+                                  {active > 0 && (
+                                    unreviewed === 0
+                                      ? <span className="text-[10px] text-green-500 font-semibold">✓</span>
+                                      : <span className="text-[10px] text-gray-400 tabular-nums">{unreviewed}/{active}</span>
+                                  )}
+                                </div>
                               </div>
                             );
                           })
