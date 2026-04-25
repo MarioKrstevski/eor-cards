@@ -549,7 +549,6 @@ export default function CardsPanel({
       columnHelper.display({
         id: 'select',
         size: 38,
-        enableResizing: false,
         header: (ctx) => {
           const pageRows = ctx.table.getRowModel().rows;
           const pageIds = pageRows.map(r => r.original.id);
@@ -592,7 +591,6 @@ export default function CardsPanel({
       columnHelper.accessor('card_number', {
         header: '#',
         size: 38,
-        enableResizing: false,
         cell: (info) => {
           const card = info.row.original;
           const dotColor = card.status === 'rejected'
@@ -652,7 +650,6 @@ export default function CardsPanel({
       columnHelper.accessor('tags', {
         header: 'Tags',
         size: 200,
-        enableResizing: false,
         cell: (info) => {
           const card = info.row.original;
           if (editingId === card.id) {
@@ -718,7 +715,6 @@ export default function CardsPanel({
         id: 'actions',
         header: 'Actions',
         size: 76,
-        enableResizing: false,
         cell: (info) => {
           const card = info.row.original;
           if (editingId === card.id) {
