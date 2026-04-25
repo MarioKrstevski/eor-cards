@@ -1,8 +1,9 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import type { ColumnSizingState } from '@tanstack/react-table';
+import type { ColumnSizingState, PaginationState } from '@tanstack/react-table';
 import {
   useReactTable,
   getCoreRowModel,
+  getPaginationRowModel,
   flexRender,
   createColumnHelper,
 } from '@tanstack/react-table';
@@ -17,6 +18,7 @@ import {
   deleteCard,
   regenerateCard,
   exportCardsUrl,
+  bulkMarkReviewed,
 } from '../api';
 import type { Card, CostEstimate, CardStatus } from '../types';
 import ConfirmModal from '../components/ConfirmModal';
@@ -75,7 +77,7 @@ function CardTile({
 
   return (
     <div
-      className={`bg-white rounded-xl border border-gray-200 shadow-md hover:shadow-lg transition-all duration-200 flex flex-col${isRejected ? ' opacity-50' : ''}`}
+      className={`bg-white rounded-xl border border-gray-200 shadow-md hover:shadow-lg transition-all duration-200 flex flex-col${isRejected ? ' opacity-60 bg-gray-50' : ''}`}
     >
       {/* Card body */}
       <div className="p-5 flex-1" style={{ minHeight: '100px' }}>
@@ -129,21 +131,12 @@ function CardTile({
           ))}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {card.needs_review && (
-            <span title="Needs review" className="text-yellow-500 text-base leading-none">
-              ⚠
-            </span>
-          )}
-          {isRejected ? (
-            <span className="inline-flex items-center gap-1 text-xs text-gray-400 line-through">
-              Rejected
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-xs text-green-700 font-medium">
-              <span className="h-1.5 w-1.5 rounded-full bg-green-500 inline-block" />
-              Active
-            </span>
-          )}
+          <span
+            className={`w-2 h-2 rounded-full ${
+              isRejected ? 'bg-red-400' : card.is_reviewed ? 'bg-gray-300' : 'bg-amber-400'
+            }`}
+            title={isRejected ? 'Rejected' : card.is_reviewed ? 'Reviewed' : 'Not reviewed'}
+          />
           <button
             onClick={() => onEdit(card)}
             title="Edit card"
@@ -217,7 +210,9 @@ export default function CardsPanel({
   // ── Card list state ────────────────────────────────────────────────────────
   const [cards, setCards] = useState<Card[]>([]);
   const [cardsLoading, setCardsLoading] = useState(false);
-  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
+  const [unreviewedOnly, setUnreviewedOnly] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
   const [statusFilter, setStatusFilter] = useState<'all' | CardStatus>('all');
   const [searchQ, setSearchQ] = useState('');
 
@@ -308,7 +303,8 @@ export default function CardsPanel({
     setJobProgress(null);
     setJobError(null);
     setEditingId(null);
-    setNeedsReviewOnly(false);
+    setUnreviewedOnly(false);
+    setSelectedIds(new Set());
     setStatusFilter('all');
     setSearchQ('');
     setActionError(null);
@@ -508,11 +504,23 @@ export default function CardsPanel({
     [documentId, chunkId, topicPath, selectedModel, regenPrompt, fetchCards]
   );
 
+  const handleBulkReview = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    try {
+      await bulkMarkReviewed(ids);
+      setSelectedIds(new Set());
+      setCards(prev => prev.map(c => ids.includes(c.id) ? { ...c, is_reviewed: true } : c));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to mark as reviewed');
+    }
+  }, [selectedIds]);
+
   // ── Filtered cards ─────────────────────────────────────────────────────────
   const filteredCards = useMemo(
     () =>
       cards.filter((c) => {
-        if (needsReviewOnly && !c.needs_review) return false;
+        if (unreviewedOnly && c.is_reviewed) return false;
         if (statusFilter !== 'all' && c.status !== statusFilter) return false;
         if (
           searchQ.trim() &&
@@ -522,20 +530,70 @@ export default function CardsPanel({
           return false;
         return true;
       }),
-    [cards, needsReviewOnly, statusFilter, searchQ]
+    [cards, unreviewedOnly, statusFilter, searchQ]
   );
 
   // ── TanStack Table columns ─────────────────────────────────────────────────
   const columns = useMemo(
     () => [
+      columnHelper.display({
+        id: 'select',
+        size: 32,
+        header: (ctx) => {
+          const pageRows = ctx.table.getRowModel().rows;
+          const pageIds = pageRows.map(r => r.original.id);
+          const allSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id));
+          const someSelected = !allSelected && pageIds.some(id => selectedIds.has(id));
+          return (
+            <input
+              type="checkbox"
+              checked={allSelected}
+              ref={el => { if (el) el.indeterminate = someSelected; }}
+              onChange={() => {
+                if (allSelected) {
+                  setSelectedIds(prev => { const n = new Set(prev); pageIds.forEach(id => n.delete(id)); return n; });
+                } else {
+                  setSelectedIds(prev => new Set([...prev, ...pageIds]));
+                }
+              }}
+              className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+            />
+          );
+        },
+        cell: (info) => {
+          const id = info.row.original.id;
+          return (
+            <input
+              type="checkbox"
+              checked={selectedIds.has(id)}
+              onChange={() => {
+                setSelectedIds(prev => {
+                  const n = new Set(prev);
+                  if (n.has(id)) n.delete(id); else n.add(id);
+                  return n;
+                });
+              }}
+              className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+            />
+          );
+        },
+      }),
       columnHelper.accessor('card_number', {
         header: '#',
-        size: 36,
+        size: 40,
         cell: (info) => {
           const card = info.row.original;
+          const dotColor = card.status === 'rejected'
+            ? 'bg-red-400'
+            : card.is_reviewed
+              ? 'bg-gray-300'
+              : 'bg-amber-400';
           return (
             <div className="flex flex-col items-center gap-0.5">
-              <span className="text-xs tabular-nums font-medium text-gray-500">{info.getValue()}</span>
+              <span className={`text-xs tabular-nums ${!card.is_reviewed ? 'font-bold text-gray-900' : 'font-normal text-gray-400'}`}>
+                {info.getValue()}
+              </span>
+              <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
               <button
                 onClick={(e) => { e.stopPropagation(); setChunkInfoCard(card); }}
                 title="View source chunk"
@@ -638,32 +696,6 @@ export default function CardsPanel({
                 </>
               )}
             </div>
-          );
-        },
-      }),
-      columnHelper.accessor('needs_review', {
-        header: 'Rev.',
-        size: 36,
-        cell: (info) =>
-          info.getValue() ? (
-            <span title="Needs review" className="text-yellow-500 text-base leading-none">
-              ⚠
-            </span>
-          ) : null,
-      }),
-      columnHelper.accessor('status', {
-        header: 'St.',
-        size: 36,
-        cell: (info) => {
-          const v = info.getValue();
-          return v === 'active' ? (
-            <span title="Active" className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-green-700 bg-green-50 border border-green-200">
-              A
-            </span>
-          ) : (
-            <span title="Rejected" className="inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold text-red-500 bg-red-50 border border-red-200">
-              R
-            </span>
           );
         },
       }),
@@ -795,6 +827,7 @@ export default function CardsPanel({
       handleRegen,
       showAnkiFormat,
       tagsPopoverId,
+      selectedIds,
     ]
   );
 
@@ -802,9 +835,11 @@ export default function CardsPanel({
     data: filteredCards,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
-    state: { columnSizing },
+    autoResetPageIndex: true,
+    state: { columnSizing, pagination },
     onColumnSizingChange: (updater) => {
       setColumnSizing((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater;
@@ -812,6 +847,7 @@ export default function CardsPanel({
         return next;
       });
     },
+    onPaginationChange: setPagination,
   });
 
   // ── Empty state ────────────────────────────────────────────────────────────
@@ -1004,15 +1040,15 @@ export default function CardsPanel({
               </button>
             )}
 
-            {/* Needs review toggle */}
+            {/* Unreviewed only toggle */}
             <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none font-medium">
               <input
                 type="checkbox"
-                checked={needsReviewOnly}
-                onChange={(e) => setNeedsReviewOnly(e.target.checked)}
+                checked={unreviewedOnly}
+                onChange={(e) => setUnreviewedOnly(e.target.checked)}
                 className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
               />
-              Needs review
+              Unreviewed only
             </label>
 
             {/* Status filter */}
@@ -1075,6 +1111,19 @@ export default function CardsPanel({
             <span className="text-xs text-gray-400 tabular-nums font-medium">
               {filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}
             </span>
+
+            {/* Bulk review button */}
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkReview}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors duration-150"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Mark {selectedIds.size} reviewed
+              </button>
+            )}
           </div>
 
           {/* Export button */}
@@ -1145,11 +1194,11 @@ export default function CardsPanel({
         ) : viewMode === 'cards' ? (
           <div className="p-5 overflow-y-auto flex-1">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {filteredCards.map((card, idx) => (
+              {table.getRowModel().rows.map((row) => (
                 <CardTile
-                  key={card.id}
-                  card={card}
-                  cardIndex={card.card_number ?? idx + 1}
+                  key={row.original.id}
+                  card={row.original}
+                  cardIndex={row.original.card_number}
                   onEdit={startEdit}
                   onReject={handleReject}
                   editingId={editingId}
@@ -1196,7 +1245,11 @@ export default function CardsPanel({
                 {table.getRowModel().rows.map((row) => (
                   <tr
                     key={row.id}
-                    className="hover:bg-blue-50/30 transition-colors duration-100"
+                    className={`transition-colors duration-100 ${
+                      row.original.status === 'rejected'
+                        ? 'bg-gray-100/60 opacity-70'
+                        : 'hover:bg-blue-50/30'
+                    }`}
                   >
                     {row.getVisibleCells().map((cell) => (
                       <td
@@ -1211,6 +1264,45 @@ export default function CardsPanel({
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+        {filteredCards.length > 0 && (
+          <div className="flex items-center justify-between gap-3 px-5 py-2.5 border-t border-gray-200 shrink-0 bg-white">
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+                className="p-1.5 text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <span className="text-xs text-gray-500 tabular-nums">
+                Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+              </span>
+              <button
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+                className="p-1.5 text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-150"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">{filteredCards.length} total</span>
+              <select
+                value={table.getState().pagination.pageSize}
+                onChange={(e) => table.setPageSize(Number(e.target.value))}
+                className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              >
+                {[25, 50, 100].map(size => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </main>

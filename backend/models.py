@@ -70,6 +70,7 @@ class Card(Base):
     extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[CardStatus] = mapped_column(Enum(CardStatus), default=CardStatus.active)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
     chunk: Mapped["Chunk"] = relationship("Chunk", back_populates="cards")

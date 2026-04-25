@@ -123,7 +123,7 @@ export async function getCards(params?: {
   document_id?: number;
   chunk_id?: number;
   status?: CardStatus;
-  needs_review?: boolean;
+  is_reviewed?: boolean;
   tag?: string;
   search_q?: string;
 }): Promise<Card[]> {
@@ -138,6 +138,7 @@ export async function updateCard(
     tags?: string[];
     extra?: string | null;
     status?: CardStatus;
+    is_reviewed?: boolean;
   }
 ): Promise<Card> {
   const res = await http.patch<Card>(`/cards/${id}`, params);
@@ -146,6 +147,11 @@ export async function updateCard(
 
 export async function rejectCard(id: number): Promise<Card> {
   const res = await http.post<Card>(`/cards/${id}/reject`);
+  return res.data;
+}
+
+export async function bulkMarkReviewed(cardIds: number[]): Promise<{ updated: number }> {
+  const res = await http.post<{ updated: number }>('/cards/bulk-review', { card_ids: cardIds });
   return res.data;
 }
 

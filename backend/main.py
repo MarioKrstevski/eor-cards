@@ -10,6 +10,16 @@ from backend import models  # noqa
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
+def _run_migrations():
+    from sqlalchemy import text, inspect as sa_inspect
+    insp = sa_inspect(engine)
+    cols = [c['name'] for c in insp.get_columns('cards')]
+    with engine.connect() as conn:
+        if 'is_reviewed' not in cols:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN is_reviewed BOOLEAN NOT NULL DEFAULT 0"))
+            conn.commit()
+
+
 def seed_data():
     from sqlalchemy.orm import Session
     from backend.config import DATA_DIR
@@ -45,6 +55,7 @@ def _seed_curriculum(db, nodes, parent_id, level, parent_path):
 async def lifespan(app: FastAPI):
     os.makedirs(os.path.join(os.path.dirname(__file__), "..", "data", "uploads"), exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    _run_migrations()
     seed_data()
     yield
 

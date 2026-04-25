@@ -23,6 +23,7 @@ class CardPatch(BaseModel):
     tags: Optional[list[str]] = None
     extra: Optional[str] = None
     status: Optional[CardStatus] = None
+    is_reviewed: Optional[bool] = None
 
 
 def card_to_dict(card: Card) -> dict:
@@ -36,7 +37,7 @@ def card_to_dict(card: Card) -> dict:
         "tags": card.tags,
         "extra": card.extra,
         "status": card.status,
-        "needs_review": card.needs_review,
+        "is_reviewed": card.is_reviewed,
         "created_at": card.created_at.isoformat() if card.created_at else None,
         "updated_at": card.updated_at.isoformat() if card.updated_at else None,
         "topic_path": card.chunk.topic_path if card.chunk else None,
@@ -50,7 +51,7 @@ def list_cards(
     document_id: Optional[int] = None,
     chunk_id: Optional[int] = None,
     status: Optional[CardStatus] = None,
-    needs_review: Optional[bool] = None,
+    is_reviewed: Optional[bool] = None,
     tag: Optional[str] = None,
     search_q: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -62,8 +63,8 @@ def list_cards(
         q = q.filter(Card.chunk_id == chunk_id)
     if status:
         q = q.filter(Card.status == status)
-    if needs_review is not None:
-        q = q.filter(Card.needs_review == needs_review)
+    if is_reviewed is not None:
+        q = q.filter(Card.is_reviewed == is_reviewed)
     if tag:
         q = q.filter(cast(Card.tags, String).contains(json.dumps(tag)))
     if search_q:
@@ -86,6 +87,8 @@ def patch_card(card_id: int, body: CardPatch, db: Session = Depends(get_db)):
         card.extra = body.extra
     if body.status is not None:
         card.status = body.status
+    if body.is_reviewed is not None:
+        card.is_reviewed = body.is_reviewed
     db.commit()
     db.refresh(card)
     return card_to_dict(card)
@@ -113,7 +116,7 @@ def regenerate_card(card_id: int, body: RegenerateCardRequest, db: Session = Dep
     if cards_data:
         card.front_html = cards_data[0]["front_html"]
         card.front_text = cards_data[0]["front_text"]
-        card.needs_review = needs_review
+        card.is_reviewed = False
     db.commit()
     if usage:
         db.add(AIUsageLog(
@@ -136,9 +139,23 @@ def reject_card(card_id: int, db: Session = Depends(get_db)):
     if not card:
         raise HTTPException(404)
     card.status = CardStatus.rejected
+    card.is_reviewed = True
     db.commit()
     db.refresh(card)
     return card_to_dict(card)
+
+
+class BulkReviewRequest(BaseModel):
+    card_ids: list[int]
+
+@router.post("/bulk-review")
+def bulk_mark_reviewed(body: BulkReviewRequest, db: Session = Depends(get_db)):
+    if body.card_ids:
+        db.query(Card).filter(Card.id.in_(body.card_ids)).update(
+            {"is_reviewed": True}, synchronize_session=False
+        )
+        db.commit()
+    return {"updated": len(body.card_ids)}
 
 
 @router.delete("/{card_id}", status_code=204)

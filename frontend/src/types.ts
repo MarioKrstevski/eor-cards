@@ -71,7 +71,7 @@ export interface Card {
   tags: string[];
   extra: string | null;
   status: CardStatus;
-  needs_review: boolean;
+  is_reviewed: boolean;
   created_at: string;
   updated_at: string;
   topic_path: string | null;
