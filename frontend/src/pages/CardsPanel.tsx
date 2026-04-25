@@ -248,6 +248,9 @@ export default function CardsPanel({
   // ── Ankify modal ───────────────────────────────────────────────────────────
   const [ankifyOpen, setAnkifyOpen] = useState(false);
 
+  // ── Generate confirm modal ─────────────────────────────────────────────────
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+
   // ── Anki/plain toggle ─────────────────────────────────────────────────────
   const [showAnkiFormat, setShowAnkiFormat] = useState(false);
 
@@ -545,7 +548,8 @@ export default function CardsPanel({
     () => [
       columnHelper.display({
         id: 'select',
-        size: 32,
+        size: 38,
+        enableResizing: false,
         header: (ctx) => {
           const pageRows = ctx.table.getRowModel().rows;
           const pageIds = pageRows.map(r => r.original.id);
@@ -587,7 +591,8 @@ export default function CardsPanel({
       }),
       columnHelper.accessor('card_number', {
         header: '#',
-        size: 40,
+        size: 38,
+        enableResizing: false,
         cell: (info) => {
           const card = info.row.original;
           const dotColor = card.status === 'rejected'
@@ -616,6 +621,7 @@ export default function CardsPanel({
       }),
       columnHelper.accessor('front_text', {
         header: 'Front',
+        minSize: 200,
         cell: (info) => {
           const card = info.row.original;
           if (editingId === card.id) {
@@ -644,7 +650,8 @@ export default function CardsPanel({
       }),
       columnHelper.accessor('tags', {
         header: 'Tags',
-        size: 120,
+        size: 200,
+        enableResizing: false,
         cell: (info) => {
           const card = info.row.original;
           if (editingId === card.id) {
@@ -709,7 +716,8 @@ export default function CardsPanel({
       columnHelper.display({
         id: 'actions',
         header: 'Actions',
-        size: 64,
+        size: 76,
+        enableResizing: false,
         cell: (info) => {
           const card = info.row.original;
           if (editingId === card.id) {
@@ -844,7 +852,7 @@ export default function CardsPanel({
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     enableColumnResizing: true,
-    columnResizeMode: 'onChange',
+    columnResizeMode: 'onEnd',
     autoResetPageIndex: true,
     state: { columnSizing, pagination },
     onColumnSizingChange: (updater) => {
@@ -902,7 +910,7 @@ export default function CardsPanel({
 
               {/* Generate button — solid blue */}
               <button
-                onClick={handleGenerate}
+                onClick={() => setShowGenerateConfirm(true)}
                 disabled={jobRunning || !selectedModel}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:ring-offset-1"
               >
@@ -1235,14 +1243,17 @@ export default function CardsPanel({
           </div>
         ) : (
           <div className="flex-1 overflow-auto">
-            <table className="w-full text-sm border-collapse">
+            <table className="w-full text-sm border-collapse table-fixed">
               <thead className="sticky top-0 z-10">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
-                        style={{ width: header.getSize(), position: 'relative' }}
+                        style={{
+                          width: header.column.id === 'front_text' ? 'auto' : header.getSize(),
+                          position: 'relative',
+                        }}
                         className="px-3 py-2 text-left text-[11px] font-semibold text-gray-700 uppercase tracking-wide bg-gray-100 border border-gray-400 select-none"
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
@@ -1275,7 +1286,7 @@ export default function CardsPanel({
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
-                        style={{ width: cell.column.getSize() }}
+                        style={{ width: cell.column.id === 'front_text' ? 'auto' : cell.column.getSize() }}
                         className="px-3 py-2.5 align-top border border-gray-300"
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -1333,6 +1344,23 @@ export default function CardsPanel({
           title="Generation failed"
           message={jobAlertError}
           onClose={() => setJobAlertError(null)}
+        />
+      )}
+
+      {showGenerateConfirm && (
+        <ConfirmModal
+          title="Generate cards for whole document?"
+          message={
+            estimate
+              ? `This will generate cards for all chunks and replace any existing cards.\n\nEstimated cost: ~$${estimate.estimated_cost_usd.toFixed(2)} (${estimate.estimated_input_tokens.toLocaleString()} in / ${estimate.estimated_output_tokens.toLocaleString()} out tokens).`
+              : 'This will generate cards for all chunks and replace any existing cards.'
+          }
+          confirmLabel="Generate"
+          onConfirm={() => {
+            setShowGenerateConfirm(false);
+            handleGenerate();
+          }}
+          onCancel={() => setShowGenerateConfirm(false)}
         />
       )}
 
@@ -1408,7 +1436,10 @@ export default function CardsPanel({
       )}
 
       {ankifyOpen && filteredCards.length > 0 && (
-        <AnkifyModal cards={filteredCards} onClose={() => setAnkifyOpen(false)} />
+        <AnkifyModal
+          cards={selectedIds.size > 0 ? filteredCards.filter(c => selectedIds.has(c.id)) : filteredCards}
+          onClose={() => setAnkifyOpen(false)}
+        />
       )}
     </>
   );

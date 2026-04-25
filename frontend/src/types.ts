@@ -49,6 +49,7 @@ export interface Document {
   uploaded_at: string;
   chunk_count: number;
   total_cards: number;
+  unreviewed_cards: number;
   chunks?: ChunkWithTopic[];
 }
 

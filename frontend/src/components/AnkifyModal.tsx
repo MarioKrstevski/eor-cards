@@ -51,7 +51,6 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
   // Keyboard handler
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      // Don't intercept if focus is inside an input/textarea
       if ((e.target as HTMLElement).matches('input, textarea')) return;
       if (e.key === 'Escape') { onClose(); return; }
       if (e.key === ' ') {
@@ -70,7 +69,7 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
 
   if (!card) return null;
 
-  const progress = ((index) / cards.length) * 100;
+  const progress = (index / cards.length) * 100;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-100" onClick={(e) => e.stopPropagation()}>
@@ -105,13 +104,13 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
         </button>
       </div>
 
-      {/* Card area */}
-      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 overflow-y-auto">
-        <div className="w-full max-w-2xl">
+      {/* Card area — top-aligned, scrollable */}
+      <div className="flex-1 overflow-y-auto px-6 pt-8 pb-4">
+        <div className="w-full max-w-2xl mx-auto">
           {/* Card face */}
-          <div className="bg-white rounded-2xl shadow-lg border border-gray-200 p-8 min-h-[180px] flex items-center justify-center">
+          <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-8">
             <div
-              className="text-base leading-relaxed text-gray-800 text-center"
+              className="text-base leading-relaxed text-gray-800"
               dangerouslySetInnerHTML={{
                 __html: revealed ? renderRevealed(card.front_html) : renderHidden(card.front_html),
               }}
@@ -120,34 +119,35 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
 
           {/* Extra field — shown after reveal */}
           {revealed && card.extra && (
-            <div className="mt-4 bg-white rounded-xl border border-gray-200 px-6 py-4">
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Additional context</p>
+            <div className="mt-4 bg-white rounded-xl border border-gray-200 px-5 py-3.5">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Additional context</p>
               <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{card.extra}</div>
             </div>
           )}
+        </div>
+      </div>
 
-          {/* Divider */}
-          <div className="mt-6 border-t border-gray-300" />
-
-          {/* Action area */}
+      {/* Bottom action bar — pinned to bottom */}
+      <div className="shrink-0 bg-white border-t border-gray-200 px-6 py-4">
+        <div className="w-full max-w-2xl mx-auto">
           {!revealed ? (
-            <div className="mt-6 flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-1.5">
               <button
                 onClick={() => setRevealed(true)}
-                className="px-8 py-2.5 bg-white border border-gray-300 rounded-full text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors duration-150 shadow-sm"
+                className="px-8 py-2 bg-white border border-gray-300 rounded-full text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 transition-colors duration-150 shadow-sm"
               >
                 Show Answer
               </button>
               <span className="text-[10px] text-gray-400">or press Space</span>
             </div>
           ) : (
-            <div className="mt-6">
-              <div className="grid grid-cols-4 gap-3">
+            <div>
+              <div className="grid grid-cols-4 gap-2">
                 {RATINGS.map((r) => (
                   <button
                     key={r.key}
                     onClick={advance}
-                    className={`flex flex-col items-center gap-1 py-3 px-2 bg-white border border-gray-200 rounded-xl transition-colors duration-150 shadow-sm ${r.color}`}
+                    className={`flex flex-col items-center gap-0.5 py-2 px-2 bg-white border border-gray-200 rounded-lg transition-colors duration-150 shadow-sm ${r.color}`}
                   >
                     <span className="text-[10px] text-gray-400 font-medium">{r.time}</span>
                     <span className="text-sm font-semibold text-gray-700">{r.label}</span>
@@ -155,7 +155,7 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
                   </button>
                 ))}
               </div>
-              <p className="text-center text-[10px] text-gray-400 mt-3">
+              <p className="text-center text-[10px] text-gray-400 mt-2">
                 Space or 1–4 to continue
               </p>
             </div>

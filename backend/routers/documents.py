@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db, SessionLocal
-from backend.models import Document, Chunk, Curriculum, AIUsageLog
+from backend.models import Document, Chunk, Curriculum, AIUsageLog, Card, CardStatus
 from backend.config import DATA_DIR, ANTHROPIC_API_KEY, compute_cost, DEFAULT_MODEL
 from backend.services.chunker import parse_and_chunk_docx, parse_and_chunk_html
 from backend.services.topic_detector import detect_chunk_topics
@@ -31,6 +31,10 @@ class PasteDocumentRequest(BaseModel):
 
 def doc_to_dict(doc: Document, include_chunks: bool = False) -> dict:
     total_cards = sum(c.card_count for c in doc.chunks) if doc.chunks is not None else 0
+    unreviewed_cards = sum(
+        1 for card in (doc.cards or [])
+        if card.status == CardStatus.active and not card.is_reviewed
+    )
     d = {
         "id": doc.id,
         "original_name": doc.original_name,
@@ -38,6 +42,7 @@ def doc_to_dict(doc: Document, include_chunks: bool = False) -> dict:
         "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
         "chunk_count": doc.chunk_count,
         "total_cards": total_cards,
+        "unreviewed_cards": unreviewed_cards,
     }
     if include_chunks:
         d["chunks"] = [

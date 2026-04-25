@@ -1230,8 +1230,13 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                               <p className="text-xs text-gray-800 font-medium truncate leading-tight">
                                 {doc.original_name}
                               </p>
-                              <p className="text-[10px] text-gray-400 mt-0.5">
-                                {doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''} · {doc.total_cards ?? 0} card{(doc.total_cards ?? 0) !== 1 ? 's' : ''}
+                              <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1.5">
+                                <span>{doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''} · {doc.total_cards ?? 0} card{(doc.total_cards ?? 0) !== 1 ? 's' : ''}</span>
+                                {(doc.total_cards ?? 0) > 0 && (
+                                  doc.unreviewed_cards === 0
+                                    ? <span className="text-green-500 font-semibold" title="All reviewed">✓</span>
+                                    : <span className="text-gray-400 tabular-nums" title={`${doc.unreviewed_cards} unreviewed`}>{doc.unreviewed_cards} left</span>
+                                )}
                               </p>
                               <p className="text-[10px] text-gray-400 mt-0.5">
                                 {doc.filename.startsWith('paste_') ? 'Paste' : 'Doc'} · {new Date(doc.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
