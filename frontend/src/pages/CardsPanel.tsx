@@ -621,6 +621,7 @@ export default function CardsPanel({
       }),
       columnHelper.accessor('front_text', {
         header: 'Front',
+        size: 500,
         minSize: 200,
         cell: (info) => {
           const card = info.row.original;
@@ -1243,17 +1244,14 @@ export default function CardsPanel({
           </div>
         ) : (
           <div className="flex-1 overflow-auto">
-            <table className="w-full text-sm border-collapse table-fixed">
+            <table className="w-full text-sm border-collapse">
               <thead className="sticky top-0 z-10">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
                       <th
                         key={header.id}
-                        style={{
-                          width: header.column.id === 'front_text' ? 'auto' : header.getSize(),
-                          position: 'relative',
-                        }}
+                        style={{ width: header.getSize(), position: 'relative' }}
                         className="px-3 py-2 text-left text-[11px] font-semibold text-gray-700 uppercase tracking-wide bg-gray-100 border border-gray-400 select-none"
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
@@ -1286,7 +1284,7 @@ export default function CardsPanel({
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
-                        style={{ width: cell.column.id === 'front_text' ? 'auto' : cell.column.getSize() }}
+                        style={{ width: cell.column.getSize() }}
                         className="px-3 py-2.5 align-top border border-gray-300"
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
