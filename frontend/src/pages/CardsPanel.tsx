@@ -601,18 +601,22 @@ export default function CardsPanel({
     [documentId, chunkId, topicPath, selectedModel, regenPrompt, fetchCards]
   );
 
+  const unreviewedSelectedIds = useMemo(
+    () => cards.filter(c => selectedIds.has(c.id) && c.status === 'active' && !c.is_reviewed).map(c => c.id),
+    [cards, selectedIds]
+  );
+
   const handleBulkReview = useCallback(async () => {
-    if (selectedIds.size === 0) return;
-    const ids = [...selectedIds];
+    if (unreviewedSelectedIds.length === 0) return;
     try {
-      await bulkMarkReviewed(ids);
+      await bulkMarkReviewed(unreviewedSelectedIds);
       setSelectedIds(new Set());
-      setCards(prev => prev.map(c => ids.includes(c.id) ? { ...c, is_reviewed: true } : c));
+      setCards(prev => prev.map(c => unreviewedSelectedIds.includes(c.id) ? { ...c, is_reviewed: true } : c));
       onReviewChange?.();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to mark as reviewed');
     }
-  }, [selectedIds, onReviewChange]);
+  }, [unreviewedSelectedIds, onReviewChange]);
 
   // ── Filtered cards ─────────────────────────────────────────────────────────
   const filteredCards = useMemo(
@@ -1227,7 +1231,7 @@ export default function CardsPanel({
             </span>
 
             {/* Bulk review button */}
-            {selectedIds.size > 0 && (
+            {unreviewedSelectedIds.length > 0 && (
               <button
                 onClick={handleBulkReview}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors duration-150"
@@ -1235,7 +1239,7 @@ export default function CardsPanel({
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
-                Mark {selectedIds.size} reviewed
+                Mark {unreviewedSelectedIds.length} reviewed
               </button>
             )}
           </div>
