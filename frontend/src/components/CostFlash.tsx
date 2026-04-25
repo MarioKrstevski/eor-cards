@@ -31,12 +31,15 @@ export default function CostFlash() {
     const canvas = canvasRef.current;
     if (!container || !canvas) return;
 
-    busyRef.current = true;
-    container.style.display = 'block';
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const safeContainer: HTMLDivElement = container;
+    const safeCanvas: HTMLCanvasElement = canvas;
 
-    const ctx = canvas.getContext('2d')!;
+    busyRef.current = true;
+    safeContainer.style.display = 'block';
+    safeCanvas.width = window.innerWidth;
+    safeCanvas.height = window.innerHeight;
+
+    const ctx = safeCanvas.getContext('2d')!;
 
     // Start and end positions
     const sx = window.innerWidth / 2;
@@ -83,7 +86,7 @@ export default function CostFlash() {
       }));
 
       // Draw particles
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, safeCanvas.width, safeCanvas.height);
       for (const p of particles) {
         const pElapsed = elapsed - p.delay;
         if (pElapsed <= 0) continue;
@@ -118,8 +121,8 @@ export default function CostFlash() {
         rafRef.current = requestAnimationFrame(frame);
       } else {
         // Done
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        container.style.display = 'none';
+        ctx.clearRect(0, 0, safeCanvas.width, safeCanvas.height);
+        safeContainer.style.display = 'none';
         busyRef.current = false;
         rafRef.current = null;
         window.dispatchEvent(new CustomEvent('costComplete', { detail: { newTotal } }));
