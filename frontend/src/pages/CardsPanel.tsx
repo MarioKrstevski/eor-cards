@@ -44,6 +44,11 @@ function renderClozeHtml(html: string): string {
   );
 }
 
+// Strips HTML tags but preserves {{c1::term}} cloze syntax
+function stripHtmlKeepCloze(html: string): string {
+  return html.replace(/<[^>]+>/g, '').trim();
+}
+
 // ── CardTile component ─────────────────────────────────────────────────────────
 interface CardTileProps {
   card: Card;
@@ -629,8 +634,8 @@ export default function CardsPanel({
             );
           }
           return (
-            <span className="block text-sm text-gray-800 whitespace-normal break-words leading-relaxed">
-              {card.front_text}
+            <span className="block text-sm text-gray-800 whitespace-normal break-words leading-relaxed font-mono text-xs">
+              {stripHtmlKeepCloze(card.front_html)}
             </span>
           );
         },
