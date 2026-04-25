@@ -15,6 +15,7 @@ import {
 } from '../api';
 import type {
   CurriculumNode,
+  TopicCoverageStats,
   Document,
   ChunkWithTopic,
   CostEstimate,
@@ -33,7 +34,7 @@ interface TopicNodeProps {
   depth: number;
   onSelect: (id: number) => void;
   selectedId: number | null;
-  cardCounts: Record<string, number>;
+  cardCounts: Record<string, TopicCoverageStats>;
 }
 
 function topicCountStyle(count: number, isSelected: boolean): { text: string; badge: string } {
@@ -46,7 +47,7 @@ function topicCountStyle(count: number, isSelected: boolean): { text: string; ba
 
 function TopicNode({ node, depth, onSelect, selectedId, cardCounts }: TopicNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
-  const count = cardCounts[String(node.id)] ?? 0;
+  const count = cardCounts[String(node.id)]?.total ?? 0;
   const isSelected = node.id === selectedId;
   const style = topicCountStyle(count, isSelected);
 
@@ -411,7 +412,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
 
   // Topic tree
   const [curriculum, setCurriculum] = useState<CurriculumNode[]>([]);
-  const [directCounts, setDirectCounts] = useState<Record<string, number>>({});
+  const [directCounts, setDirectCounts] = useState<Record<string, TopicCoverageStats>>({});
   const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
   const [topicSearch, setTopicSearch] = useState('');
 
@@ -1067,7 +1068,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                           <p className="text-xs text-gray-400 italic px-3 py-2">No matches</p>
                         ) : (
                           results.map((node) => {
-                            const count = aggregatedCounts[String(node.id)] ?? 0;
+                            const count = aggregatedCounts[String(node.id)]?.total ?? 0;
                             const isSelected = node.id === selectedTopicId;
                             const style = topicCountStyle(count, isSelected);
                             return (
