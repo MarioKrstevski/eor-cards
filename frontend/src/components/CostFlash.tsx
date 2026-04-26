@@ -2,8 +2,16 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 const DURATION = 2500;       // total animation ms
-const MISSILE_COUNT = 20;
 const MISSILE_TRAVEL = 1100; // ms each missile flies
+const MAX_MISSILES = 20;
+const MIN_MISSILES = 3;
+// Cost thresholds: $0.005 → ~3 missiles, $0.30 → 20 missiles (linear)
+const COST_MAX = 0.30;
+
+function missileCount(cost: number): number {
+  const t = Math.min(cost / COST_MAX, 1);
+  return Math.max(MIN_MISSILES, Math.round(MIN_MISSILES + t * (MAX_MISSILES - MIN_MISSILES)));
+}
 
 export default function CostFlash() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,7 +41,7 @@ export default function CostFlash() {
       position:fixed;left:${x}px;top:${y}px;
       transform:translate(-50%,-50%);
       width:5px;height:5px;border-radius:50%;
-      background:rgba(102,224,255,0.55);
+      background:rgba(34,197,94,0.5);
       pointer-events:none;z-index:9999;
       transition:opacity 0.35s linear,transform 0.35s linear;
     `;
@@ -47,14 +55,16 @@ export default function CostFlash() {
 
   function launchMissile(sx: number, sy: number, ex: number, ey: number, delay: number) {
     const tid = window.setTimeout(() => {
-      const el = document.createElement('div');
+      const el = document.createElement('span');
+      el.textContent = '$';
       el.style.cssText = `
         position:fixed;left:${sx}px;top:${sy}px;
         transform:translate(-50%,-50%);
-        width:7px;height:7px;border-radius:50%;
-        background:#66e0ff;
-        box-shadow:0 0 6px rgba(102,224,255,0.9),0 0 14px rgba(102,224,255,0.45);
+        font-size:13px;font-weight:800;line-height:1;
+        color:#22c55e;
+        text-shadow:0 0 6px rgba(34,197,94,0.9),0 0 14px rgba(34,197,94,0.45);
         pointer-events:none;z-index:9999;
+        user-select:none;
       `;
       document.body.appendChild(el);
 
@@ -95,7 +105,6 @@ export default function CostFlash() {
     if (!container) return;
     const safeContainer: HTMLDivElement = container;
 
-    // Cancel any pending missiles from a previous (interrupted) run
     timeoutsRef.current.forEach(clearTimeout);
     timeoutsRef.current = [];
 
@@ -104,17 +113,16 @@ export default function CostFlash() {
 
     const sx = window.innerWidth / 2;
     const sy = window.innerHeight / 2;
-    const ex = window.innerWidth - 90; // near header cost badge
+    const ex = window.innerWidth - 90;
     const ey = 22;
 
-    // Stagger all missiles over the first 65% of the duration
+    const count = missileCount(cost);
     const spread = DURATION * 0.65;
-    for (let i = 0; i < MISSILE_COUNT; i++) {
-      const delay = i === 0 ? 0 : (i / (MISSILE_COUNT - 1)) * spread;
+    for (let i = 0; i < count; i++) {
+      const delay = i === 0 ? 0 : (i / (count - 1)) * spread;
       launchMissile(sx, sy, ex, ey, delay);
     }
 
-    // Number countdown via RAF — also drives the header update
     let t0: number | null = null;
     function frame(ts: number) {
       if (!t0) t0 = ts;
@@ -150,7 +158,7 @@ export default function CostFlash() {
       {/* Centered overlay card */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/55 rounded-2xl px-10 py-6 flex flex-col items-center gap-2 backdrop-blur-[2px]">
         <p className="text-white/70 text-[10px] font-semibold tracking-[0.2em] uppercase">Task complete</p>
-        <span ref={labelRef} className="text-cyan-400 text-2xl font-bold tabular-nums">$0.0000</span>
+        <span ref={labelRef} className="text-blue-900 text-2xl font-bold tabular-nums">$0.0000</span>
       </div>
     </div>,
     document.body
