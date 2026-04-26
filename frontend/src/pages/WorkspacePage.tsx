@@ -1330,9 +1330,9 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                             <button
                               onClick={(e) => { e.stopPropagation(); openChunkView(doc.id); }}
                               title="Browse chunks"
-                              className="absolute bottom-2 right-2 flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-all duration-150"
+                              className="absolute bottom-2 right-2 flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-blue-600 transition-colors duration-150"
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
                               </svg>
                               <span>chunks</span>
