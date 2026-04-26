@@ -1264,15 +1264,37 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                               setSelectedDocumentId(doc.id);
                               setSelectedTopicId(null);
                             }}
-                            onDoubleClick={() => openChunkView(doc.id)}
                             className={[
-                              'group flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors duration-150 border-b border-gray-100',
+                              'group relative px-3 pt-2 pb-3 cursor-pointer transition-colors duration-150 border-b border-gray-100',
                               isSelected
                                 ? 'bg-blue-50 border-l-2 border-l-blue-600'
                                 : 'border-l-2 border-l-transparent hover:bg-gray-50',
                             ].join(' ')}
                           >
-                            <div className="flex-1 min-w-0">
+                            {/* Top-right: rename + delete */}
+                            <div className="absolute top-1.5 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); startRename(doc); }}
+                                title="Rename document"
+                                className="p-0.5 text-gray-300 hover:text-blue-500 transition-colors duration-150"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828A2 2 0 0110 16.414H8v-2a2 2 0 01.586-1.414z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setConfirmDeleteDocId(doc.id); }}
+                                title="Delete document"
+                                className="p-0.5 text-gray-300 hover:text-red-500 transition-colors duration-150"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" />
+                                </svg>
+                              </button>
+                            </div>
+
+                            {/* Main content */}
+                            <div className="pr-12 min-w-0">
                               {renamingDocId === doc.id ? (
                                 <input
                                   autoFocus
@@ -1303,60 +1325,17 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                                 {doc.filename.startsWith('paste_') ? 'Paste' : 'Doc'} · {new Date(doc.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               </p>
                             </div>
+
+                            {/* Bottom-right: open chunks */}
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openChunkView(doc.id);
-                              }}
+                              onClick={(e) => { e.stopPropagation(); openChunkView(doc.id); }}
                               title="Browse chunks"
-                              className="shrink-0 text-gray-400 hover:text-blue-600 transition-colors duration-150"
+                              className="absolute bottom-2 right-2 flex items-center gap-1 text-[10px] font-medium text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-all duration-150"
                             >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={2}
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M4 6h16M4 12h16M4 18h7"
-                                />
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
                               </svg>
-                            </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); startRename(doc); }}
-                              title="Rename document"
-                              className="shrink-0 text-gray-300 hover:text-blue-500 transition-colors duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828A2 2 0 0110 16.414H8v-2a2 2 0 01.586-1.414z" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmDeleteDocId(doc.id);
-                              }}
-                              title="Delete document"
-                              className="shrink-0 text-gray-300 hover:text-red-500 transition-colors duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-4 w-4"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={2}
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z"
-                                />
-                              </svg>
+                              <span>chunks</span>
                             </button>
                           </div>
                         );
