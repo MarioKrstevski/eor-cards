@@ -60,7 +60,7 @@ export default function CostFlash() {
       el.style.cssText = `
         position:fixed;left:${sx}px;top:${sy}px;
         transform:translate(-50%,-50%);
-        font-size:20px;font-weight:800;line-height:1;
+        font-size:40px;font-weight:900;line-height:1;
         color:#22c55e;
         text-shadow:0 0 6px rgba(34,197,94,0.9),0 0 14px rgba(34,197,94,0.45);
         pointer-events:none;z-index:9999;
