@@ -329,6 +329,21 @@ def confirm_topics(doc_id: int, body: ConfirmTopicsRequest, db: Session = Depend
     return doc_to_dict(doc, include_chunks=True)
 
 
+class RenameDocumentRequest(BaseModel):
+    name: str
+
+@router.patch("/{doc_id}/rename", status_code=200)
+def rename_document(doc_id: int, body: RenameDocumentRequest, db: Session = Depends(get_db)):
+    doc = db.get(Document, doc_id)
+    if not doc:
+        raise HTTPException(404)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Name cannot be empty")
+    doc.original_name = name
+    db.commit()
+    return {"id": doc.id, "original_name": doc.original_name}
+
 @router.delete("/{doc_id}", status_code=204)
 def delete_document(doc_id: int, db: Session = Depends(get_db)):
     doc = db.get(Document, doc_id)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   deleteDocument,
+  renameDocument,
   getDocuments,
   getCurriculum,
   getCurriculumCoverage,
@@ -407,6 +408,8 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDeleteDocId, setConfirmDeleteDocId] = useState<number | null>(null);
+  const [renamingDocId, setRenamingDocId] = useState<number | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   // Sidebar
   const [sidebarTab, setSidebarTab] = useState<'topics' | 'documents'>('topics');
@@ -678,6 +681,21 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     } finally {
       setPasting(false);
     }
+  }
+
+  function startRename(doc: { id: number; original_name: string }) {
+    setRenamingDocId(doc.id);
+    setRenameValue(doc.original_name);
+  }
+
+  async function commitRename() {
+    if (renamingDocId == null) return;
+    const trimmed = renameValue.trim();
+    if (trimmed) {
+      await renameDocument(renamingDocId, trimmed);
+      await fetchDocuments();
+    }
+    setRenamingDocId(null);
   }
 
   async function handleDeleteConfirm() {
@@ -1255,9 +1273,24 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                             ].join(' ')}
                           >
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs text-gray-800 font-medium truncate leading-tight">
-                                {doc.original_name}
-                              </p>
+                              {renamingDocId === doc.id ? (
+                                <input
+                                  autoFocus
+                                  value={renameValue}
+                                  onChange={(e) => setRenameValue(e.target.value)}
+                                  onBlur={commitRename}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') commitRename();
+                                    if (e.key === 'Escape') setRenamingDocId(null);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-full text-xs text-gray-800 font-medium leading-tight border border-blue-400 rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-blue-400"
+                                />
+                              ) : (
+                                <p className="text-xs text-gray-800 font-medium truncate leading-tight">
+                                  {doc.original_name}
+                                </p>
+                              )}
                               <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1.5">
                                 <span>{doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''} · {doc.total_cards ?? 0} card{(doc.total_cards ?? 0) !== 1 ? 's' : ''}</span>
                                 {(doc.total_cards ?? 0) > 0 && (
@@ -1291,6 +1324,15 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                                   strokeLinejoin="round"
                                   d="M4 6h16M4 12h16M4 18h7"
                                 />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); startRename(doc); }}
+                              title="Rename document"
+                              className="shrink-0 text-gray-300 hover:text-blue-500 transition-colors duration-150 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828A2 2 0 0110 16.414H8v-2a2 2 0 01.586-1.414z" />
                               </svg>
                             </button>
                             <button

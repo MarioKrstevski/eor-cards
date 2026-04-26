@@ -118,6 +118,10 @@ export async function deleteDocument(id: number): Promise<void> {
   await http.delete(`/documents/${id}`);
 }
 
+export async function renameDocument(id: number, name: string): Promise<void> {
+  await http.patch(`/documents/${id}/rename`, { name });
+}
+
 // ─── Cards ────────────────────────────────────────────────────────────────────
 
 export async function getCards(params?: {
