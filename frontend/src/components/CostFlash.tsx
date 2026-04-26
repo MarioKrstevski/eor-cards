@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
-const DURATION = 2500;       // total animation ms
+const PAUSE = 2000;          // ms to show cost before anything moves
+const ANIMATE = 2000;        // ms for missiles + countdown
+const DURATION = PAUSE + ANIMATE; // 4000ms total
 const MISSILE_TRAVEL = 1100; // ms each missile flies
 const MAX_MISSILES = 20;
 const MIN_MISSILES = 3;
@@ -117,25 +119,36 @@ export default function CostFlash() {
     const ey = 22;
 
     const count = missileCount(cost);
-    const spread = DURATION * 0.65;
+    const spread = ANIMATE * 0.65;
     for (let i = 0; i < count; i++) {
-      const delay = i === 0 ? 0 : (i / (count - 1)) * spread;
+      const delay = PAUSE + (i === 0 ? 0 : (i / (count - 1)) * spread);
       launchMissile(sx, sy, ex, ey, delay);
     }
 
     let t0: number | null = null;
     function frame(ts: number) {
       if (!t0) t0 = ts;
-      const globalT = Math.min((ts - t0) / DURATION, 1);
+      const elapsed = ts - t0;
+
+      // During the pause phase keep label at full cost, header unchanged
+      if (elapsed < PAUSE) {
+        if (labelRef.current) {
+          labelRef.current.textContent = `$${cost.toFixed(4)}`;
+        }
+        rafRef.current = requestAnimationFrame(frame);
+        return;
+      }
+
+      const animT = Math.min((elapsed - PAUSE) / ANIMATE, 1);
 
       if (labelRef.current) {
-        labelRef.current.textContent = `$${(cost * (1 - globalT)).toFixed(4)}`;
+        labelRef.current.textContent = `$${(cost * (1 - animT)).toFixed(4)}`;
       }
       window.dispatchEvent(new CustomEvent('costProgress', {
-        detail: { value: prevTotal + cost * globalT },
+        detail: { value: prevTotal + cost * animT },
       }));
 
-      if (globalT < 1) {
+      if (animT < 1) {
         rafRef.current = requestAnimationFrame(frame);
       } else {
         safeContainer.style.display = 'none';
