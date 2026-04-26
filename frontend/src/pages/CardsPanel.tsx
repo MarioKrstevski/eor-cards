@@ -1472,6 +1472,7 @@ export default function CardsPanel({
               : 'This will generate cards for all chunks and replace any existing cards.'
           }
           confirmLabel="Generate"
+          variant="primary"
           onConfirm={() => {
             setShowGenerateConfirm(false);
             handleGenerate();

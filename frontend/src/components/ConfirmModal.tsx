@@ -4,6 +4,7 @@ interface ConfirmModalProps {
   title: string;
   message: string;
   confirmLabel?: string;
+  variant?: 'danger' | 'primary';
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -12,6 +13,7 @@ export default function ConfirmModal({
   title,
   message,
   confirmLabel = 'Delete',
+  variant = 'danger',
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -52,7 +54,7 @@ export default function ConfirmModal({
           </button>
           <button
             onClick={onConfirm}
-            className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1"
+            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-offset-1 ${variant === 'primary' ? 'bg-blue-700 hover:bg-blue-800 focus:ring-blue-400' : 'bg-red-500 hover:bg-red-600 focus:ring-red-400'}`}
           >
             {confirmLabel}
           </button>
