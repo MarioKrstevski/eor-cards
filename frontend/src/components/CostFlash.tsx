@@ -60,7 +60,7 @@ export default function CostFlash() {
       el.style.cssText = `
         position:fixed;left:${sx}px;top:${sy}px;
         transform:translate(-50%,-50%);
-        font-size:13px;font-weight:800;line-height:1;
+        font-size:20px;font-weight:800;line-height:1;
         color:#22c55e;
         text-shadow:0 0 6px rgba(34,197,94,0.9),0 0 14px rgba(34,197,94,0.45);
         pointer-events:none;z-index:9999;
@@ -158,7 +158,7 @@ export default function CostFlash() {
       {/* Centered overlay card */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/55 rounded-2xl px-10 py-6 flex flex-col items-center gap-2 backdrop-blur-[2px]">
         <p className="text-white/70 text-[10px] font-semibold tracking-[0.2em] uppercase">Task complete</p>
-        <span ref={labelRef} className="text-blue-900 text-2xl font-bold tabular-nums">$0.0000</span>
+        <span ref={labelRef} className="text-green-500 text-2xl font-bold tabular-nums">$0.0000</span>
       </div>
     </div>,
     document.body
