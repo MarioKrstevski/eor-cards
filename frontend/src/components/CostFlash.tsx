@@ -57,16 +57,14 @@ export default function CostFlash() {
 
   function launchMissile(sx: number, sy: number, ex: number, ey: number, delay: number) {
     const tid = window.setTimeout(() => {
-      const el = document.createElement('span');
-      el.textContent = '$';
+      const el = document.createElement('div');
       el.style.cssText = `
         position:fixed;left:${sx}px;top:${sy}px;
         transform:translate(-50%,-50%);
-        font-size:28px;font-weight:900;line-height:1;
-        color:#22c55e;
-        text-shadow:0 0 6px rgba(34,197,94,0.9),0 0 14px rgba(34,197,94,0.45);
+        width:9px;height:9px;border-radius:50%;
+        background:#22c55e;
+        box-shadow:0 0 6px rgba(34,197,94,0.9),0 0 14px rgba(34,197,94,0.45);
         pointer-events:none;z-index:9999;
-        user-select:none;
       `;
       document.body.appendChild(el);
 
