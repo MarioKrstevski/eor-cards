@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 
 const PAUSE = 2000;          // ms to show cost before anything moves
 const ANIMATE = 2000;        // ms for missiles + countdown
-const DURATION = PAUSE + ANIMATE; // 4000ms total
 const MISSILE_TRAVEL = 1100; // ms each missile flies
 const MAX_MISSILES = 20;
 const MIN_MISSILES = 3;
