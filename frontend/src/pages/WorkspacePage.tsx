@@ -55,7 +55,7 @@ function topicReviewStyle(active: number, unreviewed: number, isSelected: boolea
 }
 
 function TopicNode({ node, depth, onSelect, selectedId, cardCounts, editMode, onAddChild, onRename, onDelete }: TopicNodeProps) {
-  const [expanded, setExpanded] = useState(depth < 2);
+  const [expanded, setExpanded] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameVal, setRenameVal] = useState(node.name);
   const [isAddingChild, setIsAddingChild] = useState(false);
