@@ -605,7 +605,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     setConfirmReassignTopicId(null);
     setReassignLoading(true);
     try {
-      await reassignTopics(id);
+      await reassignTopics(id, chunkingModel);
       setCardsRefreshKey((k) => k + 1);
       refreshCoverage();
       refreshUsage();

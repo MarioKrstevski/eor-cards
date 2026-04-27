@@ -48,8 +48,9 @@ export async function deleteCurriculumNode(id: number): Promise<void> {
   await http.delete(`/curriculum/${id}`);
 }
 
-export async function reassignTopics(id: number): Promise<{ reassigned: number }> {
-  const res = await http.post<{ reassigned: number }>(`/curriculum/${id}/reassign-topics`);
+export async function reassignTopics(id: number, chunkingModel?: string): Promise<{ reassigned: number }> {
+  const params = chunkingModel ? { chunking_model: chunkingModel } : undefined;
+  const res = await http.post<{ reassigned: number }>(`/curriculum/${id}/reassign-topics`, undefined, { params });
   return res.data;
 }
 

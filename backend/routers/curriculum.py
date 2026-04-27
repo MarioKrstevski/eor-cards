@@ -6,7 +6,7 @@ from typing import Optional
 from backend.db import get_db
 from backend.models import Curriculum, Chunk, Card, CardStatus
 import anthropic
-from backend.config import ANTHROPIC_API_KEY, DEFAULT_MODEL, compute_cost
+from backend.config import ANTHROPIC_API_KEY, DEFAULT_MODEL, DEFAULT_CHUNKING_MODEL, compute_cost
 from backend.models import AIUsageLog
 from backend.services.topic_detector import detect_chunk_topics
 
@@ -135,7 +135,7 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{node_id}/reassign-topics")
-def reassign_topics(node_id: int, db: Session = Depends(get_db)):
+def reassign_topics(node_id: int, chunking_model: str = DEFAULT_CHUNKING_MODEL, db: Session = Depends(get_db)):
     """Re-run AI topic detection for chunks currently assigned to this node's subtree."""
     node = db.get(Curriculum, node_id)
     if not node:
@@ -159,7 +159,7 @@ def reassign_topics(node_id: int, db: Session = Depends(get_db)):
     chunk_dicts = [{"id": c.id, "heading": c.heading, "source_text": c.source_text} for c in chunks]
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    mappings, usage = detect_chunk_topics(client, chunk_dicts, curriculum_nodes, model=DEFAULT_MODEL)
+    mappings, usage = detect_chunk_topics(client, chunk_dicts, curriculum_nodes, model=chunking_model)
 
     for m in mappings:
         chunk = db.get(Chunk, m["chunk_id"])
@@ -182,10 +182,10 @@ def reassign_topics(node_id: int, db: Session = Depends(get_db)):
     if usage.get("input_tokens", 0):
         db.add(AIUsageLog(
             operation="topic_detection",
-            model=DEFAULT_MODEL,
+            model=chunking_model,
             input_tokens=usage.get("input_tokens", 0),
             output_tokens=usage.get("output_tokens", 0),
-            cost_usd=compute_cost(DEFAULT_MODEL, usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
+            cost_usd=compute_cost(chunking_model, usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
         ))
         db.commit()
 
