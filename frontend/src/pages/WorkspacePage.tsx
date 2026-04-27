@@ -508,6 +508,9 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   const [topicEditMode, setTopicEditMode] = useState(false);
   const [confirmDeleteTopicId, setConfirmDeleteTopicId] = useState<number | null>(null);
   const [reassignLoading, setReassignLoading] = useState(false);
+  const [confirmReassignTopicId, setConfirmReassignTopicId] = useState<number | null>(null);
+  const [addingRootTopic, setAddingRootTopic] = useState(false);
+  const [rootTopicName, setRootTopicName] = useState('');
 
   // Document selection
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
@@ -596,16 +599,25 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     refreshCoverage();
   }
 
-  async function handleReassignTopics() {
-    if (selectedTopicId == null) return;
+  async function handleReassignTopicsConfirmed() {
+    if (confirmReassignTopicId == null) return;
+    const id = confirmReassignTopicId;
+    setConfirmReassignTopicId(null);
     setReassignLoading(true);
     try {
-      await reassignTopics(selectedTopicId);
+      await reassignTopics(id);
       setCardsRefreshKey((k) => k + 1);
       refreshCoverage();
+      refreshUsage();
     } finally {
       setReassignLoading(false);
     }
+  }
+
+  async function handleAddRootTopic(name: string) {
+    await createCurriculumNode({ name, parent_id: null });
+    const updated = await getCurriculum();
+    setCurriculum(updated);
   }
 
   useEffect(() => {
@@ -1246,7 +1258,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                       </button>
                       {selectedTopicId != null && (
                         <button
-                          onClick={handleReassignTopics}
+                          onClick={() => setConfirmReassignTopicId(selectedTopicId)}
                           disabled={reassignLoading}
                           title="Re-run AI topic detection for cards under this topic"
                           className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 disabled:opacity-50 transition-colors duration-150"
@@ -1330,6 +1342,40 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                           onDelete={handleDeleteTopicRequest}
                         />
                       ))
+                    )}
+                    {/* Add root-level topic */}
+                    {topicEditMode && (
+                      <div className="px-2 py-1.5 mt-1">
+                        {addingRootTopic ? (
+                          <input
+                            autoFocus
+                            value={rootTopicName}
+                            onChange={(e) => setRootTopicName(e.target.value)}
+                            onBlur={() => { setAddingRootTopic(false); setRootTopicName(''); }}
+                            onKeyDown={async (e) => {
+                              if (e.key === 'Enter' && rootTopicName.trim()) {
+                                e.preventDefault();
+                                await handleAddRootTopic(rootTopicName.trim());
+                                setAddingRootTopic(false);
+                                setRootTopicName('');
+                              }
+                              if (e.key === 'Escape') { setAddingRootTopic(false); setRootTopicName(''); }
+                            }}
+                            placeholder="New topic name..."
+                            className="w-full text-xs border border-blue-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-400 bg-blue-50/50"
+                          />
+                        ) : (
+                          <button
+                            onMouseDown={(e) => { e.preventDefault(); setAddingRootTopic(true); setRootTopicName(''); }}
+                            className="flex items-center gap-1 w-full px-2 py-1 text-xs text-gray-400 hover:text-blue-600 rounded-lg hover:bg-blue-50 transition-colors duration-150"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                            </svg>
+                            Add topic
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1548,6 +1594,19 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
       )}
 
       {/* Delete topic confirm */}
+      {confirmReassignTopicId != null && (() => {
+        const node = flatCurriculum.find(n => n.id === confirmReassignTopicId);
+        return (
+          <ConfirmModal
+            title="Reassign topics?"
+            message={`Re-run AI topic detection for all chunks under "${node?.name}". This will use AI tokens and update card tags to match new topic assignments.`}
+            confirmLabel="Reassign"
+            onConfirm={handleReassignTopicsConfirmed}
+            onCancel={() => setConfirmReassignTopicId(null)}
+          />
+        );
+      })()}
+
       {confirmDeleteTopicId != null && (() => {
         const node = flatCurriculum.find(n => n.id === confirmDeleteTopicId);
         const stats = aggregatedCounts[String(confirmDeleteTopicId)];

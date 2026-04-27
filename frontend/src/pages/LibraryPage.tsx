@@ -548,7 +548,7 @@ type LibraryTab = 'curriculum' | 'rules' | 'coverage' | 'documents';
 
 export default function LibraryPage() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<LibraryTab>('curriculum');
+  const [activeTab, setActiveTab] = useState<LibraryTab>('rules');
 
   const [curriculum, setCurriculum] = useState<CurriculumNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<CurriculumNode | null>(null);
@@ -689,15 +689,15 @@ export default function LibraryPage() {
     <div className="flex h-[calc(100vh-56px)] flex-col overflow-hidden">
       {/* Tab header — pill-style */}
       <div className="bg-white border-b border-gray-200 flex items-center px-5 py-2.5 gap-1.5 shrink-0">
-        <button className={tabClass('curriculum')} onClick={() => setActiveTab('curriculum')}>
+        {/* <button className={tabClass('curriculum')} onClick={() => setActiveTab('curriculum')}>
           Curriculum
-        </button>
+        </button> */}
         <button className={tabClass('rules')} onClick={() => setActiveTab('rules')}>
           Rules
         </button>
-        <button className={tabClass('coverage')} onClick={() => setActiveTab('coverage')}>
+        {/* <button className={tabClass('coverage')} onClick={() => setActiveTab('coverage')}>
           Coverage
-        </button>
+        </button> */}
         <button className={tabClass('documents')} onClick={() => setActiveTab('documents')}>
           Documents
         </button>
@@ -1104,13 +1104,13 @@ export default function LibraryPage() {
                 </div>
               ) : (
                 <div className="max-w-2xl">
-                  <p className="text-xs text-gray-400 mb-4 font-medium">{topicDocs.length} document{topicDocs.length !== 1 ? 's' : ''} in this topic</p>
+                  <p className="text-sm text-gray-400 mb-4 font-medium">{topicDocs.length} document{topicDocs.length !== 1 ? 's' : ''} in this topic</p>
                   <div className="flex flex-col gap-2">
                     {topicDocs.map((doc) => (
                       <div key={doc.id} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 flex items-center justify-between gap-3 hover:border-blue-200 hover:shadow-md transition-all duration-150">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-gray-800 truncate">{doc.original_name}</p>
-                          <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-2">
+                          <p className="text-base font-semibold text-gray-800 truncate">{doc.original_name}</p>
+                          <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
                             <span>{doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''}</span>
                             <span>·</span>
                             <span>{doc.total_cards ?? 0} card{(doc.total_cards ?? 0) !== 1 ? 's' : ''}</span>

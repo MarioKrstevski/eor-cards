@@ -164,8 +164,18 @@ def reassign_topics(node_id: int, db: Session = Depends(get_db)):
     for m in mappings:
         chunk = db.get(Chunk, m["chunk_id"])
         if chunk:
+            old_topic_id = chunk.topic_id
             chunk.topic_id = m["topic_id"]
             chunk.topic_path = m["topic_path"]
+            # Update card tags to reflect new leaf topic name
+            if m["topic_id"] and m["topic_id"] != old_topic_id:
+                new_node = db.get(Curriculum, m["topic_id"])
+                if new_node:
+                    leaf_name = new_node.name
+                    for card in db.query(Card).filter_by(chunk_id=chunk.id).all():
+                        tags = list(card.tags or [])
+                        if leaf_name not in tags:
+                            card.tags = tags + [leaf_name]
 
     db.commit()
 

@@ -90,13 +90,11 @@ function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, 
   function save() {
     setIsEditing(false);
     if (localVal !== value) onSave(localVal);
-    requestAnimationFrame(() => divRef.current?.focus({ preventScroll: true }));
   }
 
   function cancel() {
     setIsEditing(false);
     setLocalVal(value);
-    requestAnimationFrame(() => divRef.current?.focus({ preventScroll: true }));
   }
 
   if (isEditing) {
@@ -475,22 +473,22 @@ function TagsCell({ tags, cellId, onSelect, onSave, onNavigate }: TagsCellProps)
               <button
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); setEditingIdx(idx); setEditingVal(tag); }}
-                className="ml-0.5 text-blue-300 hover:text-blue-600 opacity-0 group-hover/tag:opacity-100 transition-opacity"
+                className="ml-0.5 text-blue-400 hover:text-blue-600 opacity-40 group-hover/tag:opacity-100 transition-opacity"
                 tabIndex={-1}
                 title="Edit tag"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
                 </svg>
               </button>
               <button
                 type="button"
                 onMouseDown={(e) => { e.preventDefault(); setLocalTags(prev => prev.filter((_, i) => i !== idx)); }}
-                className="ml-0 text-blue-300 hover:text-red-500 opacity-0 group-hover/tag:opacity-100 transition-opacity"
+                className="ml-0 text-blue-400 hover:text-red-500 opacity-40 group-hover/tag:opacity-100 transition-opacity"
                 tabIndex={-1}
                 title="Remove tag"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
@@ -962,41 +960,42 @@ export default function CardsPanel({
                 type="checkbox"
                 checked={selectedIds.has(id)}
                 onChange={() => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
-                className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+                className="w-4 h-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500"
               />
-              <button
-                onClick={() => {
-                  const div = tableContainerRef.current?.querySelector(
-                    `[data-cell-id="${rowIndex}:front_text"]`
-                  ) as HTMLElement | null;
-                  div?.focus();
-                  requestAnimationFrame(() => div?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
-                }}
-                title="Edit"
-                className="p-1 text-gray-400 hover:text-blue-700 transition-colors duration-150 rounded hover:bg-blue-50"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
-                </svg>
-              </button>
-              {card.status === 'rejected' ? (
-                <button onClick={() => handleRestore(card.id)} title="Restore" className="p-1 text-green-500 hover:text-green-700 transition-colors duration-150 rounded hover:bg-green-50">
+              <div className="grid grid-cols-2 gap-0.5 mt-1.5">
+                <button
+                  onClick={() => {
+                    const div = tableContainerRef.current?.querySelector(
+                      `[data-cell-id="${rowIndex}:front_text"]`
+                    ) as HTMLElement | null;
+                    div?.focus();
+                    requestAnimationFrame(() => div?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+                  }}
+                  title="Edit"
+                  className="p-1 text-gray-400 hover:text-blue-700 transition-colors duration-150 rounded hover:bg-blue-50"
+                >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 11l3 3L22 4M3 12a9 9 0 1018 0 9 9 0 00-18 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
                   </svg>
                 </button>
-              ) : (
-                <button onClick={() => handleReject(card.id)} title="Reject" className="p-1 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded hover:bg-red-50">
+                {card.status === 'rejected' ? (
+                  <button onClick={() => handleRestore(card.id)} title="Restore" className="p-1 text-green-500 hover:text-green-700 transition-colors duration-150 rounded hover:bg-green-50">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 11l3 3L22 4M3 12a9 9 0 1018 0 9 9 0 00-18 0z" />
+                    </svg>
+                  </button>
+                ) : (
+                  <button onClick={() => handleReject(card.id)} title="Reject" className="p-1 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded hover:bg-red-50">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
+                <button onClick={() => setConfirmDeleteCardId(card.id)} title="Delete permanently" className="p-1 text-gray-400 hover:text-red-700 transition-colors duration-150 rounded hover:bg-red-50">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" />
                   </svg>
                 </button>
-              )}
-              <button onClick={() => setConfirmDeleteCardId(card.id)} title="Delete permanently" className="p-1 text-gray-400 hover:text-red-700 transition-colors duration-150 rounded hover:bg-red-50">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" />
-                </svg>
-              </button>
               <div className="relative">
                 <button
                   onClick={() => { setRegenId(regenId === card.id ? null : card.id); setRegenPrompt(''); }}
@@ -1029,6 +1028,7 @@ export default function CardsPanel({
                     </div>
                   </>
                 )}
+              </div>
               </div>
             </div>
           );
