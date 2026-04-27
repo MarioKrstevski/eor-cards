@@ -121,8 +121,19 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404)
     if db.query(Curriculum).filter_by(parent_id=node_id).count():
         raise HTTPException(400, "Cannot delete node with children")
-    # Reassign chunks/cards that pointed here → point to parent (or null)
+
     parent = db.get(Curriculum, node.parent_id) if node.parent_id else None
+    deleted_name = node.name
+
+    # Remove deleted topic name from card tags before reassigning chunks
+    affected_chunks = db.query(Chunk).filter(Chunk.topic_id == node_id).all()
+    for chunk in affected_chunks:
+        for card in db.query(Card).filter_by(chunk_id=chunk.id).all():
+            tags = list(card.tags or [])
+            if deleted_name in tags:
+                card.tags = [t for t in tags if t != deleted_name]
+
+    # Reassign chunks to parent (or null if top-level)
     db.query(Chunk).filter(Chunk.topic_id == node_id).update(
         {
             "topic_id": parent.id if parent else None,
