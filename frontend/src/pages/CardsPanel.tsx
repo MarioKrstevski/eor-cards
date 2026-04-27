@@ -65,11 +65,22 @@ function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, 
   const [isEditing, setIsEditing] = useState(false);
   const [localVal, setLocalVal] = useState(value);
   const divRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Keep local value in sync when the saved value changes externally
+  // Keep local value in sync when saved value changes externally
   useEffect(() => {
     if (!isEditing) setLocalVal(value);
   }, [value, isEditing]);
+
+  // Auto-resize textarea to fit content
+  function autoResize(el: HTMLTextAreaElement) {
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 'px';
+  }
+
+  useEffect(() => {
+    if (isEditing && textareaRef.current) autoResize(textareaRef.current);
+  }, [isEditing, localVal]);
 
   function startEdit() {
     setLocalVal(value);
@@ -89,20 +100,34 @@ function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, 
   }
 
   if (isEditing) {
-    const sharedProps = {
-      value: localVal,
-      onChange: (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => setLocalVal(e.target.value),
-      onBlur: save,
-      onKeyDown: (e: React.KeyboardEvent) => {
-        if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-        if (e.key === 'Tab') { e.preventDefault(); save(); }
-      },
-      autoFocus: true,
-      className: 'w-full text-sm bg-white border-0 outline-none p-0 leading-relaxed resize-none',
+    const keyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      if (e.key === 'Tab') { e.preventDefault(); save(); }
     };
     return (
-      <div>
-        {multiline ? <textarea {...sharedProps} rows={3} /> : <input type="text" {...sharedProps} />}
+      <div className="w-full h-full">
+        {multiline ? (
+          <textarea
+            ref={textareaRef}
+            value={localVal}
+            onChange={(e) => { setLocalVal(e.target.value); autoResize(e.target); }}
+            onBlur={save}
+            onKeyDown={keyDown}
+            autoFocus
+            className="w-full text-sm bg-white border-0 outline-none p-0 leading-relaxed resize-none overflow-hidden"
+            style={{ minHeight: '2rem' }}
+          />
+        ) : (
+          <input
+            type="text"
+            value={localVal}
+            onChange={(e) => setLocalVal(e.target.value)}
+            onBlur={save}
+            onKeyDown={keyDown}
+            autoFocus
+            className="w-full text-sm bg-white border-0 outline-none p-0 leading-relaxed"
+          />
+        )}
       </div>
     );
   }
@@ -122,7 +147,8 @@ function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, 
         if (e.key === 'ArrowRight') { e.preventDefault(); onNavigate('right'); }
         if (e.key === 'Enter') { e.preventDefault(); startEdit(); }
       }}
-      className="min-h-[2rem] cursor-default outline-none w-full"
+      className="cursor-default outline-none w-full h-full"
+      style={{ minHeight: '2rem' }}
     >
       {renderDisplay ? renderDisplay(value) : <span className="text-sm text-gray-800">{value}</span>}
     </div>
@@ -339,6 +365,170 @@ function CardTile({
   );
 }
 
+// ── Tags cell with pill edit UI ───────────────────────────────────────────────
+interface TagsCellProps {
+  tags: string[];
+  cellId: string;
+  onSelect: (cellId: string) => void;
+  onSave: (tags: string[]) => void;
+  onNavigate: (dir: 'up' | 'down' | 'left' | 'right') => void;
+}
+
+function TagsCell({ tags, cellId, onSelect, onSave, onNavigate }: TagsCellProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [localTags, setLocalTags] = useState<string[]>(tags);
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editingVal, setEditingVal] = useState('');
+  const [addingNew, setAddingNew] = useState(false);
+  const [newTagVal, setNewTagVal] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const displayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { if (!isEditing) setLocalTags(tags); }, [tags, isEditing]);
+
+  function startEditing() { setLocalTags([...tags]); setIsEditing(true); }
+
+  function doSave(final: string[]) {
+    setIsEditing(false); setEditingIdx(null); setAddingNew(false);
+    setEditingVal(''); setNewTagVal('');
+    if (JSON.stringify(final) !== JSON.stringify(tags)) onSave(final);
+    requestAnimationFrame(() => displayRef.current?.focus({ preventScroll: true }));
+  }
+
+  function handleContainerBlur(e: React.FocusEvent<HTMLDivElement>) {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    let final = [...localTags];
+    if (editingIdx !== null) {
+      const t = editingVal.trim();
+      final = t ? final.map((v, i) => i === editingIdx ? t : v) : final.filter((_, i) => i !== editingIdx);
+    }
+    if (addingNew && newTagVal.trim()) final = [...final, newTagVal.trim()];
+    doSave(final);
+  }
+
+  function commitTagEdit(idx: number, val: string) {
+    const t = val.trim();
+    setLocalTags(t ? localTags.map((v, i) => i === idx ? t : v) : localTags.filter((_, i) => i !== idx));
+    setEditingIdx(null); setEditingVal('');
+  }
+
+  function commitNewTag(val: string) {
+    if (val.trim()) setLocalTags(prev => [...prev, val.trim()]);
+    setAddingNew(false); setNewTagVal('');
+  }
+
+  if (!isEditing) {
+    return (
+      <div
+        ref={displayRef}
+        data-cell-id={cellId}
+        tabIndex={0}
+        onClick={() => onSelect(cellId)}
+        onDoubleClick={startEditing}
+        onFocus={() => onSelect(cellId)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowUp') { e.preventDefault(); onNavigate('up'); }
+          if (e.key === 'ArrowDown') { e.preventDefault(); onNavigate('down'); }
+          if (e.key === 'ArrowLeft') { e.preventDefault(); onNavigate('left'); }
+          if (e.key === 'ArrowRight') { e.preventDefault(); onNavigate('right'); }
+          if (e.key === 'Enter') { e.preventDefault(); startEditing(); }
+        }}
+        className="cursor-default outline-none w-full h-full"
+        style={{ minHeight: '2rem' }}
+      >
+        {tags.length === 0
+          ? <span className="text-gray-300 text-xs">—</span>
+          : <div className="flex flex-wrap gap-1">
+              {tags.map(tag => (
+                <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-medium">{tag}</span>
+              ))}
+            </div>
+        }
+      </div>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="w-full" style={{ minHeight: '2rem' }} onBlur={handleContainerBlur}>
+      <div className="flex flex-wrap gap-1 items-center">
+        {localTags.map((tag, idx) =>
+          editingIdx === idx ? (
+            <input
+              key={idx}
+              autoFocus
+              value={editingVal}
+              onChange={(e) => setEditingVal(e.target.value)}
+              onBlur={(e) => {
+                if (containerRef.current?.contains(e.relatedTarget as Node | null)) commitTagEdit(idx, editingVal);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); commitTagEdit(idx, editingVal); }
+                if (e.key === 'Escape') { setEditingIdx(null); setEditingVal(''); }
+                if (e.key === 'Tab') { e.preventDefault(); commitTagEdit(idx, editingVal); setAddingNew(true); }
+              }}
+              className="px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700 border border-blue-400 outline-none font-medium"
+              style={{ width: Math.max(60, editingVal.length * 7 + 20) + 'px' }}
+            />
+          ) : (
+            <span key={idx} className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-medium group/tag">
+              <span>{tag}</span>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); setEditingIdx(idx); setEditingVal(tag); }}
+                className="ml-0.5 text-blue-300 hover:text-blue-600 opacity-0 group-hover/tag:opacity-100 transition-opacity"
+                tabIndex={-1}
+                title="Edit tag"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); setLocalTags(prev => prev.filter((_, i) => i !== idx)); }}
+                className="ml-0 text-blue-300 hover:text-red-500 opacity-0 group-hover/tag:opacity-100 transition-opacity"
+                tabIndex={-1}
+                title="Remove tag"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </span>
+          )
+        )}
+        {addingNew ? (
+          <input
+            autoFocus
+            value={newTagVal}
+            onChange={(e) => setNewTagVal(e.target.value)}
+            onBlur={(e) => {
+              if (containerRef.current?.contains(e.relatedTarget as Node | null)) commitNewTag(newTagVal);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commitNewTag(newTagVal); }
+              if (e.key === 'Escape') { setAddingNew(false); setNewTagVal(''); }
+            }}
+            placeholder="new tag..."
+            className="px-2 py-0.5 rounded text-[11px] bg-white text-gray-700 border border-gray-300 outline-none"
+            style={{ width: '80px' }}
+          />
+        ) : (
+          <button
+            type="button"
+            onMouseDown={(e) => { e.preventDefault(); setAddingNew(true); }}
+            className="inline-flex items-center justify-center h-5 px-1.5 rounded text-[11px] text-gray-400 border border-dashed border-gray-300 hover:text-blue-500 hover:border-blue-400 transition-colors"
+            tabIndex={-1}
+            title="Add tag"
+          >
+            +
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Column definitions for visibility toggle ───────────────────────────────────
 const OPTIONAL_COLUMNS = [
   { id: 'vignette', label: 'Vignette' },
@@ -391,6 +581,9 @@ export default function CardsPanel({
   // ── Table-view selection: DOM-only, no React state (avoids full re-render) ─
   const tableContainerRef = useRef<HTMLDivElement>(null);
   const selectedTdRef = useRef<HTMLElement | null>(null);
+
+  // ── Row heights for resizable rows ────────────────────────────────────────
+  const [rowHeights, setRowHeights] = useState<Record<number, number>>({});
 
   // ── Per-card regenerate state ─────────────────────────────────────────────
   const [regenId, setRegenId] = useState<number | null>(null);
@@ -603,34 +796,30 @@ export default function CardsPanel({
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save card'); }
   }, [documentId, chunkId, topicPath, editFrontHtml, editTags, fetchCards]);
 
-  // ── Table-view inline save handlers ───────────────────────────────────────
+  // ── Table-view inline save handlers — update local state, no refetch ────────
   const saveFrontInline = useCallback(async (id: number, val: string) => {
     setActionError(null);
     try {
-      await updateCard(id, { front_html: val });
-      if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-      else if (topicPath) fetchCards(null, topicPath);
+      const updated = await updateCard(id, { front_html: val });
+      setCards(prev => prev.map(c => c.id === id ? { ...c, front_html: updated.front_html, front_text: updated.front_text } : c));
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
-  }, [documentId, chunkId, topicPath, fetchCards]);
+  }, []);
 
-  const saveTagsInline = useCallback(async (id: number, val: string) => {
+  const saveTagsInline = useCallback(async (id: number, tags: string[]) => {
     setActionError(null);
-    const tags = val.split(',').map(t => t.trim()).filter(Boolean);
     try {
-      await updateCard(id, { tags });
-      if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-      else if (topicPath) fetchCards(null, topicPath);
+      const updated = await updateCard(id, { tags });
+      setCards(prev => prev.map(c => c.id === id ? { ...c, tags: updated.tags } : c));
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save tags'); }
-  }, [documentId, chunkId, topicPath, fetchCards]);
+  }, []);
 
   const saveFieldInline = useCallback(async (id: number, field: 'vignette' | 'teaching_case', val: string) => {
     setActionError(null);
     try {
-      await updateCard(id, { [field]: val });
-      if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-      else if (topicPath) fetchCards(null, topicPath);
+      const updated = await updateCard(id, { [field]: val });
+      setCards(prev => prev.map(c => c.id === id ? { ...c, [field]: updated[field as keyof typeof updated] } : c));
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
-  }, [documentId, chunkId, topicPath, fetchCards]);
+  }, []);
 
   // ── Cell selection: apply box-shadow to <td> directly, no React state ────
   const handleCellSelect = useCallback((cellId: string) => {
@@ -670,6 +859,28 @@ export default function CardsPanel({
     ) as HTMLElement | null;
     target?.focus({ preventScroll: false });
   }, [columnVisibility]);
+
+  // ── Row resize drag handler ────────────────────────────────────────────────
+  function handleRowResizeStart(e: React.MouseEvent, cardId: number, trEl: HTMLElement) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startH = trEl.offsetHeight;
+    const onMove = (mv: MouseEvent) => {
+      const newH = Math.max(36, startH + (mv.clientY - startY));
+      setRowHeights(prev => ({ ...prev, [cardId]: newH }));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
 
   const handleRegen = useCallback(async (id: number, prompt?: string) => {
     setRegenLoading(true); setActionError(null);
@@ -806,25 +1017,13 @@ export default function CardsPanel({
           const card = info.row.original;
           const rowIndex = info.row.index;
           const totalPageRows = info.table.getRowModel().rows.length;
-          const tagsStr = card.tags.join(', ');
           return (
-            <EditableCell
-              value={tagsStr}
+            <TagsCell
+              tags={card.tags}
               cellId={`${rowIndex}:tags`}
               onSelect={handleCellSelect}
-              onSave={(val) => saveTagsInline(card.id, val)}
+              onSave={(t) => saveTagsInline(card.id, t)}
               onNavigate={(dir) => handleCellNavigate(rowIndex, 'tags', dir, totalPageRows)}
-              renderDisplay={(val) => {
-                if (!val) return <span className="text-gray-300 text-xs">—</span>;
-                const tags = val.split(',').map(t => t.trim()).filter(Boolean);
-                return (
-                  <div className="flex flex-wrap gap-1">
-                    {tags.map(tag => (
-                      <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] bg-blue-50 text-blue-700 border border-blue-200 font-medium">{tag}</span>
-                    ))}
-                  </div>
-                );
-              }}
             />
           );
         },
@@ -1282,19 +1481,34 @@ export default function CardsPanel({
                 {table.getRowModel().rows.map(row => (
                   <tr
                     key={row.id}
-                    className={`transition-colors duration-100 ${row.original.status === 'rejected' ? 'bg-gray-100/60 opacity-70' : 'hover:bg-blue-50/30'}`}
+                    className={`group transition-colors duration-100 ${row.original.status === 'rejected' ? 'bg-gray-100/60 opacity-70' : 'hover:bg-blue-50/30'}`}
+                    style={rowHeights[row.original.id] ? { height: rowHeights[row.original.id] } : undefined}
                   >
-                    {row.getVisibleCells().map(cell => (
-                      <td
-                        key={cell.id}
-                        data-row={row.index}
-                        data-col={cell.column.id}
-                        style={{ width: cell.column.getSize() }}
-                        className="px-3 py-2.5 align-top border border-gray-300"
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
+                    {row.getVisibleCells().map((cell) => {
+                      const isEditable = ['front_text', 'tags', 'vignette', 'teaching_case'].includes(cell.column.id);
+                      const isNumberCol = cell.column.id === 'card_number';
+                      return (
+                        <td
+                          key={cell.id}
+                          data-row={row.index}
+                          data-col={cell.column.id}
+                          style={{ width: cell.column.getSize(), ...(isEditable ? { height: '1px', padding: 0 } : {}) }}
+                          className={`align-top border border-gray-300 ${isEditable ? '' : isNumberCol ? 'relative px-3 py-2.5' : 'px-3 py-2.5'}`}
+                        >
+                          {isEditable ? (
+                            <div className="px-3 py-2.5 h-full">
+                              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                            </div>
+                          ) : flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          {isNumberCol && (
+                            <div
+                              className="absolute bottom-0 left-0 right-0 h-1.5 cursor-row-resize opacity-0 group-hover:opacity-100 bg-blue-400/40 transition-opacity"
+                              onMouseDown={(e) => handleRowResizeStart(e, row.original.id, e.currentTarget.closest('tr') as HTMLElement)}
+                            />
+                          )}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
