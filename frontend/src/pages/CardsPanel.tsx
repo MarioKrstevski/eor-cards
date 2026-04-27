@@ -49,69 +49,60 @@ function stripHtmlKeepCloze(html: string): string {
 }
 
 // ── Excel-style editable cell ──────────────────────────────────────────────────
+// Self-contained: manages its own edit state. Selection (box-shadow on <td>)
+// is handled by the parent via DOM refs — no React state change on click.
 interface EditableCellProps {
   value: string;
-  isSelected: boolean;
-  isEditing: boolean;
-  onSelect: () => void;
-  onStartEdit: () => void;
+  cellId: string; // "rowIndex:colId" — used to find the cell in the DOM
+  onSelect: (cellId: string) => void;
   onSave: (val: string) => void;
-  onCancel: () => void;
   onNavigate: (dir: 'up' | 'down' | 'left' | 'right') => void;
   multiline?: boolean;
   renderDisplay?: (val: string) => React.ReactNode;
 }
 
-function EditableCell({
-  value,
-  isSelected,
-  isEditing,
-  onSelect,
-  onStartEdit,
-  onSave,
-  onCancel,
-  onNavigate,
-  multiline,
-  renderDisplay,
-}: EditableCellProps) {
+function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, renderDisplay }: EditableCellProps) {
+  const [isEditing, setIsEditing] = useState(false);
   const [localVal, setLocalVal] = useState(value);
-  const wasEditing = useRef(false);
   const divRef = useRef<HTMLDivElement>(null);
 
-  // Sync local value when edit starts
+  // Keep local value in sync when the saved value changes externally
   useEffect(() => {
-    if (isEditing && !wasEditing.current) setLocalVal(value);
-    wasEditing.current = isEditing;
-  }, [isEditing, value]);
+    if (!isEditing) setLocalVal(value);
+  }, [value, isEditing]);
 
-  // Focus the div when selected (enables keyboard nav)
-  useEffect(() => {
-    if (isSelected && !isEditing && divRef.current) {
-      divRef.current.focus({ preventScroll: true });
-    }
-  }, [isSelected, isEditing]);
+  function startEdit() {
+    setLocalVal(value);
+    setIsEditing(true);
+  }
+
+  function save() {
+    setIsEditing(false);
+    if (localVal !== value) onSave(localVal);
+    requestAnimationFrame(() => divRef.current?.focus({ preventScroll: true }));
+  }
+
+  function cancel() {
+    setIsEditing(false);
+    setLocalVal(value);
+    requestAnimationFrame(() => divRef.current?.focus({ preventScroll: true }));
+  }
 
   if (isEditing) {
     const sharedProps = {
       value: localVal,
-      onChange: (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) =>
-        setLocalVal(e.target.value),
-      onBlur: () => onSave(localVal),
+      onChange: (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => setLocalVal(e.target.value),
+      onBlur: save,
       onKeyDown: (e: React.KeyboardEvent) => {
-        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
-        if (e.key === 'Tab') { e.preventDefault(); onSave(localVal); }
+        if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+        if (e.key === 'Tab') { e.preventDefault(); save(); }
       },
       autoFocus: true,
-      className:
-        'w-full text-sm bg-transparent resize-none border-0 outline-none focus:outline-none p-0 leading-relaxed',
+      className: 'w-full text-sm bg-white border-0 outline-none p-0 leading-relaxed resize-none',
     };
     return (
-      <div className="ring-2 ring-blue-600 ring-inset rounded-sm min-h-[2rem] p-0.5">
-        {multiline ? (
-          <textarea {...sharedProps} rows={3} />
-        ) : (
-          <input type="text" {...sharedProps} />
-        )}
+      <div>
+        {multiline ? <textarea {...sharedProps} rows={3} /> : <input type="text" {...sharedProps} />}
       </div>
     );
   }
@@ -119,24 +110,21 @@ function EditableCell({
   return (
     <div
       ref={divRef}
+      data-cell-id={cellId}
       tabIndex={0}
-      onClick={onSelect}
-      onDoubleClick={(e) => { e.preventDefault(); onStartEdit(); }}
-      onFocus={onSelect}
+      onClick={() => onSelect(cellId)}
+      onDoubleClick={startEdit}
+      onFocus={() => onSelect(cellId)}
       onKeyDown={(e) => {
         if (e.key === 'ArrowUp') { e.preventDefault(); onNavigate('up'); }
         if (e.key === 'ArrowDown') { e.preventDefault(); onNavigate('down'); }
         if (e.key === 'ArrowLeft') { e.preventDefault(); onNavigate('left'); }
         if (e.key === 'ArrowRight') { e.preventDefault(); onNavigate('right'); }
-        if (e.key === 'Enter') { e.preventDefault(); onStartEdit(); }
+        if (e.key === 'Enter') { e.preventDefault(); startEdit(); }
       }}
-      className={`min-h-[2rem] cursor-default outline-none rounded-sm ${
-        isSelected ? 'ring-2 ring-blue-500 ring-inset' : ''
-      }`}
+      className="min-h-[2rem] cursor-default outline-none w-full"
     >
-      {renderDisplay ? renderDisplay(value) : (
-        <span className="text-sm text-gray-800">{value}</span>
-      )}
+      {renderDisplay ? renderDisplay(value) : <span className="text-sm text-gray-800">{value}</span>}
     </div>
   );
 }
@@ -400,10 +388,9 @@ export default function CardsPanel({
   const [editFrontHtml, setEditFrontHtml] = useState('');
   const [editTags, setEditTags] = useState('');
 
-  // ── Excel-style cell selection (table view only) ───────────────────────────
-  type CellCoord = { rowIndex: number; colId: string };
-  const [selectedCell, setSelectedCell] = useState<CellCoord | null>(null);
-  const [editingCell, setEditingCell] = useState<CellCoord | null>(null);
+  // ── Table-view selection: DOM-only, no React state (avoids full re-render) ─
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const selectedTdRef = useRef<HTMLElement | null>(null);
 
   // ── Per-card regenerate state ─────────────────────────────────────────────
   const [regenId, setRegenId] = useState<number | null>(null);
@@ -485,8 +472,8 @@ export default function CardsPanel({
     setJobProgress(null);
     setJobError(null);
     setEditingId(null);
-    setSelectedCell(null);
-    setEditingCell(null);
+    // Clear DOM selection
+    if (selectedTdRef.current) { selectedTdRef.current.style.boxShadow = ''; selectedTdRef.current = null; }
     setUnreviewedOnly(false);
     setSelectedIds(new Set());
     setStatusFilter('all');
@@ -507,8 +494,8 @@ export default function CardsPanel({
   // ── Clean up interval on unmount ──────────────────────────────────────────
   useEffect(() => { return () => { if (intervalRef.current) clearInterval(intervalRef.current); }; }, []);
 
-  // ── Clear cell selection on page change ───────────────────────────────────
-  useEffect(() => { setSelectedCell(null); setEditingCell(null); }, [pagination.pageIndex]);
+  // ── Clear DOM selection on page change (td refs become stale) ─────────────
+  useEffect(() => { selectedTdRef.current = null; }, [pagination.pageIndex]);
 
   // ── Estimate cost ──────────────────────────────────────────────────────────
   async function handleEstimate() {
@@ -645,6 +632,23 @@ export default function CardsPanel({
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
   }, [documentId, chunkId, topicPath, fetchCards]);
 
+  // ── Cell selection: apply box-shadow to <td> directly, no React state ────
+  const handleCellSelect = useCallback((cellId: string) => {
+    if (selectedTdRef.current) {
+      selectedTdRef.current.style.boxShadow = '';
+      selectedTdRef.current.style.position = '';
+    }
+    const [rowIdx, colId] = cellId.split(':');
+    const td = tableContainerRef.current?.querySelector(
+      `td[data-row="${rowIdx}"][data-col="${colId}"]`
+    ) as HTMLElement | null;
+    if (td) {
+      td.style.boxShadow = 'inset 0 0 0 2px #3b82f6';
+      td.style.position = 'relative';
+      selectedTdRef.current = td;
+    }
+  }, []);
+
   // ── Cell keyboard navigation ───────────────────────────────────────────────
   const handleCellNavigate = useCallback((rowIndex: number, colId: string, dir: 'up' | 'down' | 'left' | 'right', totalPageRows: number) => {
     const navigableCols = ['front_text', 'tags'];
@@ -660,8 +664,11 @@ export default function CardsPanel({
     if (dir === 'left') newCol = navigableCols[Math.max(0, colIdx - 1)];
     if (dir === 'right') newCol = navigableCols[Math.min(navigableCols.length - 1, colIdx + 1)];
 
-    setSelectedCell({ rowIndex: newRow, colId: newCol });
-    setEditingCell(null);
+    // Focus the target cell div — its onFocus will call handleCellSelect
+    const target = tableContainerRef.current?.querySelector(
+      `[data-cell-id="${newRow}:${newCol}"]`
+    ) as HTMLElement | null;
+    target?.focus({ preventScroll: false });
   }, [columnVisibility]);
 
   const handleRegen = useCallback(async (id: number, prompt?: string) => {
@@ -775,17 +782,12 @@ export default function CardsPanel({
           const card = info.row.original;
           const rowIndex = info.row.index;
           const totalPageRows = info.table.getRowModel().rows.length;
-          const isSel = selectedCell?.rowIndex === rowIndex && selectedCell?.colId === 'front_text';
-          const isEd = editingCell?.rowIndex === rowIndex && editingCell?.colId === 'front_text';
           return (
             <EditableCell
               value={card.front_html}
-              isSelected={isSel}
-              isEditing={isEd}
-              onSelect={() => { setSelectedCell({ rowIndex, colId: 'front_text' }); setEditingCell(null); }}
-              onStartEdit={() => setEditingCell({ rowIndex, colId: 'front_text' })}
-              onSave={(val) => { setEditingCell(null); saveFrontInline(card.id, val); }}
-              onCancel={() => { setEditingCell(null); setSelectedCell({ rowIndex, colId: 'front_text' }); }}
+              cellId={`${rowIndex}:front_text`}
+              onSelect={handleCellSelect}
+              onSave={(val) => saveFrontInline(card.id, val)}
               onNavigate={(dir) => handleCellNavigate(rowIndex, 'front_text', dir, totalPageRows)}
               multiline
               renderDisplay={(val) =>
@@ -805,17 +807,12 @@ export default function CardsPanel({
           const rowIndex = info.row.index;
           const totalPageRows = info.table.getRowModel().rows.length;
           const tagsStr = card.tags.join(', ');
-          const isSel = selectedCell?.rowIndex === rowIndex && selectedCell?.colId === 'tags';
-          const isEd = editingCell?.rowIndex === rowIndex && editingCell?.colId === 'tags';
           return (
             <EditableCell
               value={tagsStr}
-              isSelected={isSel}
-              isEditing={isEd}
-              onSelect={() => { setSelectedCell({ rowIndex, colId: 'tags' }); setEditingCell(null); }}
-              onStartEdit={() => setEditingCell({ rowIndex, colId: 'tags' })}
-              onSave={(val) => { setEditingCell(null); saveTagsInline(card.id, val); }}
-              onCancel={() => { setEditingCell(null); setSelectedCell({ rowIndex, colId: 'tags' }); }}
+              cellId={`${rowIndex}:tags`}
+              onSelect={handleCellSelect}
+              onSave={(val) => saveTagsInline(card.id, val)}
               onNavigate={(dir) => handleCellNavigate(rowIndex, 'tags', dir, totalPageRows)}
               renderDisplay={(val) => {
                 if (!val) return <span className="text-gray-300 text-xs">—</span>;
@@ -841,18 +838,12 @@ export default function CardsPanel({
           const card = info.row.original;
           const rowIndex = info.row.index;
           const totalPageRows = info.table.getRowModel().rows.length;
-          const val = card.vignette ?? '';
-          const isSel = selectedCell?.rowIndex === rowIndex && selectedCell?.colId === 'vignette';
-          const isEd = editingCell?.rowIndex === rowIndex && editingCell?.colId === 'vignette';
           return (
             <EditableCell
-              value={val}
-              isSelected={isSel}
-              isEditing={isEd}
-              onSelect={() => { setSelectedCell({ rowIndex, colId: 'vignette' }); setEditingCell(null); }}
-              onStartEdit={() => setEditingCell({ rowIndex, colId: 'vignette' })}
-              onSave={(v) => { setEditingCell(null); saveFieldInline(card.id, 'vignette', v); }}
-              onCancel={() => { setEditingCell(null); setSelectedCell({ rowIndex, colId: 'vignette' }); }}
+              value={card.vignette ?? ''}
+              cellId={`${rowIndex}:vignette`}
+              onSelect={handleCellSelect}
+              onSave={(v) => saveFieldInline(card.id, 'vignette', v)}
               onNavigate={(dir) => handleCellNavigate(rowIndex, 'vignette', dir, totalPageRows)}
               multiline
               renderDisplay={(v) =>
@@ -873,18 +864,12 @@ export default function CardsPanel({
           const card = info.row.original;
           const rowIndex = info.row.index;
           const totalPageRows = info.table.getRowModel().rows.length;
-          const val = card.teaching_case ?? '';
-          const isSel = selectedCell?.rowIndex === rowIndex && selectedCell?.colId === 'teaching_case';
-          const isEd = editingCell?.rowIndex === rowIndex && editingCell?.colId === 'teaching_case';
           return (
             <EditableCell
-              value={val}
-              isSelected={isSel}
-              isEditing={isEd}
-              onSelect={() => { setSelectedCell({ rowIndex, colId: 'teaching_case' }); setEditingCell(null); }}
-              onStartEdit={() => setEditingCell({ rowIndex, colId: 'teaching_case' })}
-              onSave={(v) => { setEditingCell(null); saveFieldInline(card.id, 'teaching_case', v); }}
-              onCancel={() => { setEditingCell(null); setSelectedCell({ rowIndex, colId: 'teaching_case' }); }}
+              value={card.teaching_case ?? ''}
+              cellId={`${rowIndex}:teaching_case`}
+              onSelect={handleCellSelect}
+              onSave={(v) => saveFieldInline(card.id, 'teaching_case', v)}
               onNavigate={(dir) => handleCellNavigate(rowIndex, 'teaching_case', dir, totalPageRows)}
               multiline
               renderDisplay={(v) =>
@@ -907,7 +892,14 @@ export default function CardsPanel({
           return (
             <div className="relative grid grid-cols-2 gap-0.5 w-fit">
               <button
-                onClick={() => setEditingCell({ rowIndex, colId: 'front_text' })}
+                onClick={() => {
+                  // Focus the front_text cell div to trigger edit via Enter/double-click pattern
+                  const div = tableContainerRef.current?.querySelector(
+                    `[data-cell-id="${rowIndex}:front_text"]`
+                  ) as HTMLElement | null;
+                  div?.focus();
+                  requestAnimationFrame(() => div?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+                }}
                 title="Edit"
                 className="p-1.5 text-gray-400 hover:text-blue-700 transition-colors duration-150 rounded-lg hover:bg-blue-50"
               >
@@ -970,12 +962,11 @@ export default function CardsPanel({
       }),
     ],
     [
-      selectedCell,
-      editingCell,
+      handleCellSelect,
+      handleCellNavigate,
       saveFrontInline,
       saveTagsInline,
       saveFieldInline,
-      handleCellNavigate,
       handleReject,
       handleRestore,
       regenId,
@@ -1263,7 +1254,7 @@ export default function CardsPanel({
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-auto">
+          <div ref={tableContainerRef} className="flex-1 overflow-auto">
             <table className="w-full text-sm border-collapse">
               <thead className="sticky top-0 z-10">
                 {table.getHeaderGroups().map(headerGroup => (
@@ -1296,6 +1287,8 @@ export default function CardsPanel({
                     {row.getVisibleCells().map(cell => (
                       <td
                         key={cell.id}
+                        data-row={row.index}
+                        data-col={cell.column.id}
                         style={{ width: cell.column.getSize() }}
                         className="px-3 py-2.5 align-top border border-gray-300"
                       >
