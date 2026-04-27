@@ -384,13 +384,16 @@ function TagsCell({ tags, cellId, onSelect, onSave, onNavigate }: TagsCellProps)
 
   useEffect(() => { if (!isEditing) setLocalTags(tags); }, [tags, isEditing]);
 
-  function startEditing() { setLocalTags([...tags]); setIsEditing(true); }
+  function startEditing() {
+    setLocalTags([...tags]);
+    setIsEditing(true);
+    requestAnimationFrame(() => containerRef.current?.focus());
+  }
 
   function doSave(final: string[]) {
     setIsEditing(false); setEditingIdx(null); setAddingNew(false);
     setEditingVal(''); setNewTagVal('');
     if (JSON.stringify(final) !== JSON.stringify(tags)) onSave(final);
-    requestAnimationFrame(() => displayRef.current?.focus({ preventScroll: true }));
   }
 
   function handleContainerBlur(e: React.FocusEvent<HTMLDivElement>) {
@@ -447,7 +450,7 @@ function TagsCell({ tags, cellId, onSelect, onSave, onNavigate }: TagsCellProps)
   }
 
   return (
-    <div ref={containerRef} className="w-full" style={{ minHeight: '2rem' }} onBlur={handleContainerBlur}>
+    <div ref={containerRef} tabIndex={0} className="w-full outline-none" style={{ minHeight: '2rem' }} onBlur={handleContainerBlur}>
       <div className="flex flex-wrap gap-1 items-center">
         {localTags.map((tag, idx) =>
           editingIdx === idx ? (
