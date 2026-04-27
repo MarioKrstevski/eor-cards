@@ -88,8 +88,8 @@ export async function setDefaultRuleSet(id: number): Promise<RuleSet> {
 
 // ─── Documents ────────────────────────────────────────────────────────────────
 
-export async function getDocuments(): Promise<Document[]> {
-  const res = await http.get<Document[]>('/documents');
+export async function getDocuments(params?: { topic_id?: number }): Promise<Document[]> {
+  const res = await http.get<Document[]>('/documents', { params });
   return res.data;
 }
 

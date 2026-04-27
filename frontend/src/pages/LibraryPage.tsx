@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ConfirmModal from '../components/ConfirmModal';
 import { flattenTree, buildAggregatedCounts } from '../utils';
 import {
@@ -13,8 +14,9 @@ import {
   deleteRuleSet,
   setDefaultRuleSet,
   exportCardsUrl,
+  getDocuments,
 } from '../api';
-import type { CurriculumNode, RuleSet, TopicCoverageStats } from '../types';
+import type { CurriculumNode, RuleSet, TopicCoverageStats, Document } from '../types';
 
 // ─── CurriculumTreeNode (editable, for Curriculum tab) ────────────────────────
 
@@ -306,6 +308,54 @@ function CoverageNode({ node, depth, cardCounts }: CoverageNodeProps) {
   );
 }
 
+// ─── SelectableCoverageNode (clickable, for Documents tab) ────────────────────
+
+interface SelectableCoverageNodeProps {
+  node: CurriculumNode;
+  depth: number;
+  cardCounts: Record<string, TopicCoverageStats>;
+  selectedId: number | null;
+  onSelect: (id: number) => void;
+}
+
+function SelectableCoverageNode({ node, depth, cardCounts, selectedId, onSelect }: SelectableCoverageNodeProps) {
+  const [expanded, setExpanded] = useState(false);
+  const stats = cardCounts[String(node.id)] ?? { total: 0, active: 0, rejected: 0, unreviewed: 0 };
+  const hasCards = stats.total > 0;
+  const isSelected = node.id === selectedId;
+
+  return (
+    <div>
+      <div
+        onClick={() => onSelect(node.id)}
+        className={`flex items-center gap-1.5 py-1.5 rounded-lg mx-1 cursor-pointer transition-colors duration-150 ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+        style={{ paddingLeft: `${10 + depth * 14}px`, paddingRight: '8px' }}
+      >
+        {node.children.length > 0 ? (
+          <button onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }} className="shrink-0 text-gray-400 hover:text-gray-600">
+            <svg className={`h-3 w-3 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        <span className={`flex-1 text-xs truncate font-medium ${isSelected ? 'text-blue-700' : hasCards ? 'text-gray-800' : 'text-gray-400'}`}>
+          {node.name}
+        </span>
+        {hasCards && (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold tabular-nums shrink-0 ${isSelected ? 'bg-blue-100 text-blue-700' : 'bg-green-50 text-green-700'}`}>
+            {stats.total}
+          </span>
+        )}
+      </div>
+      {expanded && node.children.map((child) => (
+        <SelectableCoverageNode key={child.id} node={child} depth={depth + 1} cardCounts={cardCounts} selectedId={selectedId} onSelect={onSelect} />
+      ))}
+    </div>
+  );
+}
+
 // ─── RuleSetModal ─────────────────────────────────────────────────────────────
 
 interface RuleSetModalProps {
@@ -494,9 +544,10 @@ function RuleSetItem({ rs, onRefresh, onDeleteRequest }: RuleSetItemProps) {
 
 // ─── LibraryPage ──────────────────────────────────────────────────────────────
 
-type LibraryTab = 'curriculum' | 'rules' | 'coverage';
+type LibraryTab = 'curriculum' | 'rules' | 'coverage' | 'documents';
 
 export default function LibraryPage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<LibraryTab>('curriculum');
 
   const [curriculum, setCurriculum] = useState<CurriculumNode[]>([]);
@@ -518,6 +569,11 @@ export default function LibraryPage() {
   // Coverage tab
   const [directCounts, setDirectCounts] = useState<Record<string, TopicCoverageStats>>({});
   const [coverageLoading, setCoverageLoading] = useState(false);
+
+  // Documents tab
+  const [docsTopicId, setDocsTopicId] = useState<number | null>(null);
+  const [topicDocs, setTopicDocs] = useState<Document[]>([]);
+  const [topicDocsLoading, setTopicDocsLoading] = useState(false);
 
   const fetchCurriculum = useCallback(async () => {
     try {
@@ -551,6 +607,16 @@ export default function LibraryPage() {
     fetchRuleSets();
     fetchCoverage();
   }, [fetchCurriculum, fetchRuleSets, fetchCoverage]);
+
+  // Fetch documents for selected topic in the Documents tab
+  useEffect(() => {
+    if (docsTopicId == null) { setTopicDocs([]); return; }
+    setTopicDocsLoading(true);
+    getDocuments({ topic_id: docsTopicId })
+      .then(setTopicDocs)
+      .catch(() => setTopicDocs([]))
+      .finally(() => setTopicDocsLoading(false));
+  }, [docsTopicId]);
 
   const handleDeselectIfDeleted = useCallback((id: number) => {
     setSelectedNode((prev) => (prev?.id === id ? null : prev));
@@ -631,6 +697,9 @@ export default function LibraryPage() {
         </button>
         <button className={tabClass('coverage')} onClick={() => setActiveTab('coverage')}>
           Coverage
+        </button>
+        <button className={tabClass('documents')} onClick={() => setActiveTab('documents')}>
+          Documents
         </button>
         <div className="flex-1" />
         <button
@@ -985,6 +1054,88 @@ export default function LibraryPage() {
                   </div>
                 </div>
               </div>
+            </main>
+          </div>
+        )}
+        {/* ── DOCUMENTS TAB ── */}
+        {activeTab === 'documents' && (
+          <div className="flex h-full">
+            {/* Left: topic tree */}
+            <aside className="bg-white w-72 flex flex-col overflow-hidden shrink-0 shadow-[1px_0_3px_0_rgba(0,0,0,0.04)]">
+              <div className="px-4 py-3.5 border-b border-gray-200 shrink-0">
+                <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Topics</h2>
+                <p className="text-[10px] text-gray-400 mt-1">Select a topic to see its documents</p>
+              </div>
+              <div className="flex-1 overflow-y-auto py-1.5">
+                {curriculum.length === 0 ? (
+                  <p className="text-xs text-gray-400 italic px-3 py-2">No curriculum loaded.</p>
+                ) : (
+                  curriculum.map((node) => (
+                    <SelectableCoverageNode
+                      key={node.id}
+                      node={node}
+                      depth={0}
+                      cardCounts={aggregatedCounts}
+                      selectedId={docsTopicId}
+                      onSelect={setDocsTopicId}
+                    />
+                  ))
+                )}
+              </div>
+            </aside>
+
+            {/* Right: documents list */}
+            <main className="flex-1 overflow-y-auto bg-gray-50/50 p-6">
+              {docsTopicId == null ? (
+                <div className="flex flex-col items-center justify-center h-40 gap-3 text-center">
+                  <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-gray-500 font-medium">Select a topic to see related documents</p>
+                </div>
+              ) : topicDocsLoading ? (
+                <div className="flex items-center justify-center h-20 text-sm text-gray-400">Loading...</div>
+              ) : topicDocs.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 gap-2 text-center">
+                  <p className="text-sm text-gray-500 font-medium">No documents for this topic yet.</p>
+                  <p className="text-xs text-gray-400">Documents appear here once their chunks are assigned to this topic.</p>
+                </div>
+              ) : (
+                <div className="max-w-2xl">
+                  <p className="text-xs text-gray-400 mb-4 font-medium">{topicDocs.length} document{topicDocs.length !== 1 ? 's' : ''} in this topic</p>
+                  <div className="flex flex-col gap-2">
+                    {topicDocs.map((doc) => (
+                      <div key={doc.id} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3 flex items-center justify-between gap-3 hover:border-blue-200 hover:shadow-md transition-all duration-150">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">{doc.original_name}</p>
+                          <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-2">
+                            <span>{doc.chunk_count} chunk{doc.chunk_count !== 1 ? 's' : ''}</span>
+                            <span>·</span>
+                            <span>{doc.total_cards ?? 0} card{(doc.total_cards ?? 0) !== 1 ? 's' : ''}</span>
+                            {(doc.total_cards ?? 0) > 0 && doc.unreviewed_cards === 0 && (
+                              <span className="text-green-500 font-semibold">✓ reviewed</span>
+                            )}
+                            {(doc.unreviewed_cards ?? 0) > 0 && (
+                              <span className="text-amber-600 font-medium">{doc.unreviewed_cards} unreviewed</span>
+                            )}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => navigate('/', { state: { goToDocId: doc.id } })}
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors duration-150"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                          </svg>
+                          Open
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </main>
           </div>
         )}

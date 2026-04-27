@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   deleteDocument,
   renameDocument,
@@ -483,6 +484,7 @@ interface WorkspacePageProps {
 
 export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   const { selectedModel, chunkingModel, selectedRuleSetId } = useSettings();
+  const location = useLocation();
 
   // Documents
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -549,6 +551,18 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
       /* stay stale */
     }
   }, []);
+
+  // Handle navigation from Library: auto-select a document
+  useEffect(() => {
+    const state = location.state as { goToDocId?: number } | null;
+    if (state?.goToDocId) {
+      setSidebarTab('documents');
+      setSidebarCollapsed(false);
+      setSelectedDocumentId(state.goToDocId);
+      setSelectedTopicId(null);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
 
   function refreshCoverage() {
     getCurriculumCoverage().then(setDirectCounts).catch(() => {});

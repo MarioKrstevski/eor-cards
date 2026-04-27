@@ -63,8 +63,21 @@ def doc_to_dict(doc: Document, include_chunks: bool = False) -> dict:
 
 
 @router.get("")
-def list_documents(db: Session = Depends(get_db)):
-    return [doc_to_dict(d) for d in db.query(Document).all()]
+def list_documents(topic_id: Optional[int] = None, db: Session = Depends(get_db)):
+    if topic_id is not None:
+        # Collect subtree of curriculum IDs
+        def subtree_ids(nid: int) -> set:
+            ids = {nid}
+            for child in db.query(Curriculum).filter_by(parent_id=nid).all():
+                ids |= subtree_ids(child.id)
+            return ids
+        ids = subtree_ids(topic_id)
+        doc_id_rows = db.query(Chunk.document_id).filter(Chunk.topic_id.in_(ids)).distinct().all()
+        doc_id_set = {r[0] for r in doc_id_rows}
+        docs = db.query(Document).filter(Document.id.in_(doc_id_set)).all()
+    else:
+        docs = db.query(Document).all()
+    return [doc_to_dict(d) for d in docs]
 
 
 @router.get("/{doc_id}")
