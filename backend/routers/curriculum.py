@@ -5,6 +5,10 @@ from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
 from backend.models import Curriculum, Chunk, Card, CardStatus
+import anthropic
+from backend.config import ANTHROPIC_API_KEY, DEFAULT_MODEL, compute_cost
+from backend.models import AIUsageLog
+from backend.services.topic_detector import detect_chunk_topics
 
 router = APIRouter()
 
@@ -117,5 +121,62 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404)
     if db.query(Curriculum).filter_by(parent_id=node_id).count():
         raise HTTPException(400, "Cannot delete node with children")
+    # Reassign chunks/cards that pointed here → point to parent (or null)
+    parent = db.get(Curriculum, node.parent_id) if node.parent_id else None
+    db.query(Chunk).filter(Chunk.topic_id == node_id).update(
+        {
+            "topic_id": parent.id if parent else None,
+            "topic_path": parent.path if parent else None,
+        },
+        synchronize_session=False,
+    )
     db.delete(node)
     db.commit()
+
+
+@router.post("/{node_id}/reassign-topics")
+def reassign_topics(node_id: int, db: Session = Depends(get_db)):
+    """Re-run AI topic detection for chunks currently assigned to this node's subtree."""
+    node = db.get(Curriculum, node_id)
+    if not node:
+        raise HTTPException(404)
+
+    # Collect all node IDs in subtree
+    def subtree_ids(nid: int) -> set:
+        ids = {nid}
+        for child in db.query(Curriculum).filter_by(parent_id=nid).all():
+            ids |= subtree_ids(child.id)
+        return ids
+
+    ids = subtree_ids(node_id)
+
+    chunks = db.query(Chunk).filter(Chunk.topic_id.in_(ids)).all()
+    if not chunks:
+        return {"reassigned": 0}
+
+    all_nodes = db.query(Curriculum).all()
+    curriculum_nodes = [{"id": n.id, "path": n.path} for n in all_nodes]
+    chunk_dicts = [{"id": c.id, "heading": c.heading, "source_text": c.source_text} for c in chunks]
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    mappings, usage = detect_chunk_topics(client, chunk_dicts, curriculum_nodes, model=DEFAULT_MODEL)
+
+    for m in mappings:
+        chunk = db.get(Chunk, m["chunk_id"])
+        if chunk:
+            chunk.topic_id = m["topic_id"]
+            chunk.topic_path = m["topic_path"]
+
+    db.commit()
+
+    if usage.get("input_tokens", 0):
+        db.add(AIUsageLog(
+            operation="topic_detection",
+            model=DEFAULT_MODEL,
+            input_tokens=usage.get("input_tokens", 0),
+            output_tokens=usage.get("output_tokens", 0),
+            cost_usd=compute_cost(DEFAULT_MODEL, usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
+        ))
+        db.commit()
+
+    return {"reassigned": len(mappings)}

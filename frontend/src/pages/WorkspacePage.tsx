@@ -13,6 +13,10 @@ import {
   getGenerationJob,
   estimateCost,
   confirmDocumentTopics,
+  createCurriculumNode,
+  updateCurriculumNode,
+  deleteCurriculumNode,
+  reassignTopics,
 } from '../api';
 import type {
   CurriculumNode,
@@ -36,6 +40,10 @@ interface TopicNodeProps {
   onSelect: (id: number) => void;
   selectedId: number | null;
   cardCounts: Record<string, TopicCoverageStats>;
+  editMode?: boolean;
+  onAddChild?: (parentId: number, name: string) => Promise<void>;
+  onRename?: (nodeId: number, name: string) => Promise<void>;
+  onDelete?: (nodeId: number) => void;
 }
 
 function topicReviewStyle(active: number, unreviewed: number, isSelected: boolean) {
@@ -45,8 +53,12 @@ function topicReviewStyle(active: number, unreviewed: number, isSelected: boolea
   return { text: 'text-blue-600', badge: 'bg-blue-50 text-blue-700' };
 }
 
-function TopicNode({ node, depth, onSelect, selectedId, cardCounts }: TopicNodeProps) {
+function TopicNode({ node, depth, onSelect, selectedId, cardCounts, editMode, onAddChild, onRename, onDelete }: TopicNodeProps) {
   const [expanded, setExpanded] = useState(depth < 2);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameVal, setRenameVal] = useState(node.name);
+  const [isAddingChild, setIsAddingChild] = useState(false);
+  const [addChildVal, setAddChildVal] = useState('');
   const stats = cardCounts[String(node.id)];
   const active = stats?.active ?? 0;
   const unreviewed = stats?.unreviewed ?? 0;
@@ -57,41 +69,108 @@ function TopicNode({ node, depth, onSelect, selectedId, cardCounts }: TopicNodeP
   return (
     <div>
       <div
-        onClick={() => onSelect(node.id)}
+        onClick={() => !isRenaming && onSelect(node.id)}
         className={[
-          'flex items-center gap-1.5 py-2 cursor-pointer rounded-lg mx-1 transition-colors duration-150',
+          'flex items-center gap-1.5 py-1.5 rounded-lg mx-1 transition-colors duration-150',
+          isRenaming ? 'cursor-default' : 'cursor-pointer',
           isSelected ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50',
         ].join(' ')}
         style={{ paddingLeft: `${10 + depth * 14}px`, paddingRight: '8px' }}
       >
         {node.children.length > 0 ? (
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded((v) => !v);
-            }}
+            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
             className="shrink-0 text-gray-400 hover:text-gray-600 transition-colors duration-150"
           >
-            <svg
-              className={`h-3 w-3 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2.5}
-            >
+            <svg className={`h-3 w-3 transition-transform duration-150 ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </button>
         ) : (
           <span className="w-3 shrink-0" />
         )}
-        <span className={`flex-1 text-xs truncate ${isSelected ? 'font-semibold' : 'font-medium'} ${style.text}`}>{node.name}</span>
-        {active > 0 && (
+
+        {isRenaming ? (
+          <input
+            autoFocus
+            value={renameVal}
+            onChange={(e) => setRenameVal(e.target.value)}
+            onBlur={() => { setIsRenaming(false); if (renameVal.trim() && renameVal !== node.name) onRename?.(node.id, renameVal.trim()); else setRenameVal(node.name); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); setIsRenaming(false); if (renameVal.trim() && renameVal !== node.name) onRename?.(node.id, renameVal.trim()); else setRenameVal(node.name); }
+              if (e.key === 'Escape') { setIsRenaming(false); setRenameVal(node.name); }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 text-xs border border-blue-400 rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-blue-400 bg-white text-gray-800"
+          />
+        ) : (
+          <span className={`flex-1 text-xs truncate ${isSelected ? 'font-semibold' : 'font-medium'} ${style.text}`}>{node.name}</span>
+        )}
+
+        {!isRenaming && active > 0 && (
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-semibold tabular-nums ${style.badge}`}>
             {reviewed}/{active}
           </span>
         )}
+
+        {editMode && !isRenaming && (
+          <div className="flex items-center gap-0.5 shrink-0 ml-0.5" onClick={(e) => e.stopPropagation()}>
+            <button
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsAddingChild(v => !v); setAddChildVal(''); }}
+              title="Add child topic"
+              className="p-0.5 text-gray-300 hover:text-blue-500 transition-colors duration-150 rounded"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            <button
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); setIsRenaming(true); setRenameVal(node.name); }}
+              title="Rename topic"
+              className="p-0.5 text-gray-300 hover:text-amber-500 transition-colors duration-150 rounded"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
+              </svg>
+            </button>
+            <button
+              onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onDelete?.(node.id); }}
+              title={node.children.length > 0 ? 'Remove children first' : 'Delete topic'}
+              disabled={node.children.length > 0}
+              className={`p-0.5 transition-colors duration-150 rounded ${node.children.length > 0 ? 'text-gray-200 cursor-not-allowed' : 'text-gray-300 hover:text-red-500'}`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
+      {editMode && isAddingChild && (
+        <div
+          className="mx-1 mb-1"
+          style={{ paddingLeft: `${10 + (depth + 1) * 14}px`, paddingRight: '8px' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            autoFocus
+            value={addChildVal}
+            onChange={(e) => setAddChildVal(e.target.value)}
+            onBlur={() => { setIsAddingChild(false); setAddChildVal(''); }}
+            onKeyDown={async (e) => {
+              if (e.key === 'Enter' && addChildVal.trim()) {
+                e.preventDefault();
+                await onAddChild?.(node.id, addChildVal.trim());
+                setIsAddingChild(false);
+                setAddChildVal('');
+              }
+              if (e.key === 'Escape') { setIsAddingChild(false); setAddChildVal(''); }
+            }}
+            placeholder="New topic name..."
+            className="w-full text-xs border border-blue-300 rounded px-2 py-1 outline-none focus:ring-1 focus:ring-blue-400 bg-blue-50/50"
+          />
+        </div>
+      )}
       {expanded &&
         node.children.map((child) => (
           <TopicNode
@@ -101,6 +180,10 @@ function TopicNode({ node, depth, onSelect, selectedId, cardCounts }: TopicNodeP
             onSelect={onSelect}
             selectedId={selectedId}
             cardCounts={cardCounts}
+            editMode={editMode}
+            onAddChild={onAddChild}
+            onRename={onRename}
+            onDelete={onDelete}
           />
         ))}
     </div>
@@ -420,6 +503,9 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   const [directCounts, setDirectCounts] = useState<Record<string, TopicCoverageStats>>({});
   const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
   const [topicSearch, setTopicSearch] = useState('');
+  const [topicEditMode, setTopicEditMode] = useState(false);
+  const [confirmDeleteTopicId, setConfirmDeleteTopicId] = useState<number | null>(null);
+  const [reassignLoading, setReassignLoading] = useState(false);
 
   // Document selection
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
@@ -466,6 +552,46 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
 
   function refreshCoverage() {
     getCurriculumCoverage().then(setDirectCounts).catch(() => {});
+  }
+
+  async function handleAddTopicChild(parentId: number, name: string) {
+    await createCurriculumNode({ name, parent_id: parentId });
+    const updated = await getCurriculum();
+    setCurriculum(updated);
+  }
+
+  async function handleRenameTopic(nodeId: number, name: string) {
+    await updateCurriculumNode(nodeId, { name });
+    const updated = await getCurriculum();
+    setCurriculum(updated);
+    refreshCoverage();
+  }
+
+  function handleDeleteTopicRequest(nodeId: number) {
+    setConfirmDeleteTopicId(nodeId);
+  }
+
+  async function handleDeleteTopicConfirm() {
+    if (confirmDeleteTopicId == null) return;
+    const id = confirmDeleteTopicId;
+    setConfirmDeleteTopicId(null);
+    await deleteCurriculumNode(id);
+    if (selectedTopicId === id) setSelectedTopicId(null);
+    const updated = await getCurriculum();
+    setCurriculum(updated);
+    refreshCoverage();
+  }
+
+  async function handleReassignTopics() {
+    if (selectedTopicId == null) return;
+    setReassignLoading(true);
+    try {
+      await reassignTopics(selectedTopicId);
+      setCardsRefreshKey((k) => k + 1);
+      refreshCoverage();
+    } finally {
+      setReassignLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -1073,8 +1199,8 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
               {sidebarTab === 'topics' ? (
                 /* Topics tab */
                 <div className="flex flex-col flex-1 overflow-hidden">
-                  {/* Search input */}
-                  <div className="px-3 pt-2.5 pb-1.5 shrink-0">
+                  {/* Search input + edit toolbar */}
+                  <div className="px-3 pt-2.5 pb-1.5 shrink-0 flex flex-col gap-1.5">
                     <div className="relative">
                       <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1090,6 +1216,38 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                           </svg>
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setTopicEditMode(v => !v)}
+                        title={topicEditMode ? 'Exit edit mode' : 'Edit topics'}
+                        className={`flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-lg border transition-colors duration-150 ${topicEditMode ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
+                        </svg>
+                        {topicEditMode ? 'Done' : 'Edit'}
+                      </button>
+                      {selectedTopicId != null && (
+                        <button
+                          onClick={handleReassignTopics}
+                          disabled={reassignLoading}
+                          title="Re-run AI topic detection for cards under this topic"
+                          className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 disabled:opacity-50 transition-colors duration-150"
+                        >
+                          {reassignLoading ? (
+                            <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                            </svg>
+                          )}
+                          Reassign
                         </button>
                       )}
                     </div>
@@ -1152,6 +1310,10 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                           }}
                           selectedId={selectedTopicId}
                           cardCounts={aggregatedCounts}
+                          editMode={topicEditMode}
+                          onAddChild={handleAddTopicChild}
+                          onRename={handleRenameTopic}
+                          onDelete={handleDeleteTopicRequest}
                         />
                       ))
                     )}
@@ -1370,6 +1532,24 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
           onCancel={() => setConfirmDeleteDocId(null)}
         />
       )}
+
+      {/* Delete topic confirm */}
+      {confirmDeleteTopicId != null && (() => {
+        const node = flatCurriculum.find(n => n.id === confirmDeleteTopicId);
+        const stats = aggregatedCounts[String(confirmDeleteTopicId)];
+        const cardCount = stats?.active ?? 0;
+        return (
+          <ConfirmModal
+            title="Delete topic?"
+            message={cardCount > 0
+              ? `"${node?.name}" has ${cardCount} active card(s). Deleting it will reassign those cards to the parent topic.`
+              : `Delete "${node?.name}"? This cannot be undone.`}
+            confirmLabel="Delete"
+            onConfirm={handleDeleteTopicConfirm}
+            onCancel={() => setConfirmDeleteTopicId(null)}
+          />
+        );
+      })()}
 
       {/* Chunk regen choice modal */}
       {chunkRegenConfirm && (

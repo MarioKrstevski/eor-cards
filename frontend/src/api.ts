@@ -48,6 +48,11 @@ export async function deleteCurriculumNode(id: number): Promise<void> {
   await http.delete(`/curriculum/${id}`);
 }
 
+export async function reassignTopics(id: number): Promise<{ reassigned: number }> {
+  const res = await http.post<{ reassigned: number }>(`/curriculum/${id}/reassign-topics`);
+  return res.data;
+}
+
 // ─── Rule Sets ────────────────────────────────────────────────────────────────
 
 export async function getRuleSets(): Promise<RuleSet[]> {

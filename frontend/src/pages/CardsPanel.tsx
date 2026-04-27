@@ -932,7 +932,7 @@ export default function CardsPanel({
     () => [
       columnHelper.display({
         id: 'select',
-        size: 38,
+        size: 44,
         enableHiding: false,
         header: (ctx) => {
           const pageRows = ctx.table.getRowModel().rows;
@@ -954,13 +954,83 @@ export default function CardsPanel({
         },
         cell: (info) => {
           const id = info.row.original.id;
+          const card = info.row.original;
+          const rowIndex = info.row.index;
           return (
-            <input
-              type="checkbox"
-              checked={selectedIds.has(id)}
-              onChange={() => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
-              className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
-            />
+            <div className="flex flex-col items-center gap-1 py-0.5">
+              <input
+                type="checkbox"
+                checked={selectedIds.has(id)}
+                onChange={() => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
+                className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+              />
+              <button
+                onClick={() => {
+                  const div = tableContainerRef.current?.querySelector(
+                    `[data-cell-id="${rowIndex}:front_text"]`
+                  ) as HTMLElement | null;
+                  div?.focus();
+                  requestAnimationFrame(() => div?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+                }}
+                title="Edit"
+                className="p-1 text-gray-400 hover:text-blue-700 transition-colors duration-150 rounded hover:bg-blue-50"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
+                </svg>
+              </button>
+              {card.status === 'rejected' ? (
+                <button onClick={() => handleRestore(card.id)} title="Restore" className="p-1 text-green-500 hover:text-green-700 transition-colors duration-150 rounded hover:bg-green-50">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 11l3 3L22 4M3 12a9 9 0 1018 0 9 9 0 00-18 0z" />
+                  </svg>
+                </button>
+              ) : (
+                <button onClick={() => handleReject(card.id)} title="Reject" className="p-1 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded hover:bg-red-50">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+              <button onClick={() => setConfirmDeleteCardId(card.id)} title="Delete permanently" className="p-1 text-gray-400 hover:text-red-700 transition-colors duration-150 rounded hover:bg-red-50">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" />
+                </svg>
+              </button>
+              <div className="relative">
+                <button
+                  onClick={() => { setRegenId(regenId === card.id ? null : card.id); setRegenPrompt(''); }}
+                  title="Regenerate"
+                  className={`p-1 transition-colors duration-150 rounded ${regenId === card.id ? 'text-amber-600 bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'}`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
+                {regenId === card.id && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setRegenId(null)} />
+                    <div className="absolute left-full ml-1 top-0 z-20 bg-white border border-amber-200 rounded-xl shadow-xl p-3 w-52">
+                      <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide mb-2">Regenerate card</p>
+                      <input
+                        className="w-full text-xs border border-amber-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-amber-50/40 transition-colors duration-150 mb-2"
+                        placeholder="Optional guidance..."
+                        value={regenPrompt}
+                        onChange={(e) => setRegenPrompt(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleRegen(card.id); if (e.key === 'Escape') setRegenId(null); }}
+                        autoFocus
+                      />
+                      <div className="flex gap-1.5">
+                        <button onClick={() => handleRegen(card.id)} disabled={regenLoading} className="flex-1 px-2.5 py-1.5 text-xs font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors duration-150">
+                          {regenLoading ? 'Working...' : 'Regenerate'}
+                        </button>
+                        <button onClick={() => setRegenId(null)} className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-150">Cancel</button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           );
         },
       }),
@@ -1077,85 +1147,6 @@ export default function CardsPanel({
                   : <span className="text-gray-300 text-xs">—</span>
               }
             />
-          );
-        },
-      }),
-      columnHelper.display({
-        id: 'actions',
-        header: 'Actions',
-        size: 76,
-        enableHiding: false,
-        cell: (info) => {
-          const card = info.row.original;
-          const rowIndex = info.row.index;
-          return (
-            <div className="relative grid grid-cols-2 gap-0.5 w-fit">
-              <button
-                onClick={() => {
-                  // Focus the front_text cell div to trigger edit via Enter/double-click pattern
-                  const div = tableContainerRef.current?.querySelector(
-                    `[data-cell-id="${rowIndex}:front_text"]`
-                  ) as HTMLElement | null;
-                  div?.focus();
-                  requestAnimationFrame(() => div?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
-                }}
-                title="Edit"
-                className="p-1.5 text-gray-400 hover:text-blue-700 transition-colors duration-150 rounded-lg hover:bg-blue-50"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H8v-2.414a2 2 0 01.586-1.414z" />
-                </svg>
-              </button>
-              <button
-                onClick={() => { setRegenId(regenId === card.id ? null : card.id); setRegenPrompt(''); }}
-                title="Regenerate"
-                className={`p-1.5 transition-colors duration-150 rounded-lg ${regenId === card.id ? 'text-amber-600 bg-amber-50' : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'}`}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-              {card.status === 'rejected' ? (
-                <button onClick={() => handleRestore(card.id)} title="Restore card" className="p-1.5 text-green-500 hover:text-green-700 transition-colors duration-150 rounded-lg hover:bg-green-50">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 11l3 3L22 4M3 12a9 9 0 1018 0 9 9 0 00-18 0z" />
-                  </svg>
-                </button>
-              ) : (
-                <button onClick={() => handleReject(card.id)} title="Reject" className="p-1.5 text-gray-400 hover:text-red-500 transition-colors duration-150 rounded-lg hover:bg-red-50">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-              <button onClick={() => setConfirmDeleteCardId(card.id)} title="Delete permanently" className="p-1.5 text-gray-400 hover:text-red-700 transition-colors duration-150 rounded-lg hover:bg-red-50">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7h6m-7 0a1 1 0 01-1-1V5a1 1 0 011-1h6a1 1 0 011 1v1a1 1 0 01-1 1H9z" />
-                </svg>
-              </button>
-              {regenId === card.id && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setRegenId(null)} />
-                  <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-amber-200 rounded-xl shadow-xl p-3 w-52">
-                    <p className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide mb-2">Regenerate card</p>
-                    <input
-                      className="w-full text-xs border border-amber-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent bg-amber-50/40 transition-colors duration-150 mb-2"
-                      placeholder="Optional guidance..."
-                      value={regenPrompt}
-                      onChange={(e) => setRegenPrompt(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleRegen(card.id); if (e.key === 'Escape') setRegenId(null); }}
-                      autoFocus
-                    />
-                    <div className="flex gap-1.5">
-                      <button onClick={() => handleRegen(card.id)} disabled={regenLoading} className="flex-1 px-2.5 py-1.5 text-xs font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600 disabled:opacity-50 transition-colors duration-150">
-                        {regenLoading ? 'Working...' : 'Regenerate'}
-                      </button>
-                      <button onClick={() => setRegenId(null)} className="px-2 py-1.5 text-xs text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-50 transition-colors duration-150">Cancel</button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
           );
         },
       }),
@@ -1321,7 +1312,7 @@ export default function CardsPanel({
             )}
 
             {/* Ankify */}
-            {filteredCards.length > 0 && (
+            {selectedIds.size > 0 && (
               <button onClick={() => setAnkifyOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100 transition-colors duration-150" title="Review cards Anki-style">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
