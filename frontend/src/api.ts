@@ -142,6 +142,8 @@ export async function updateCard(
     front_html?: string;
     tags?: string[];
     extra?: string | null;
+    vignette?: string | null;
+    teaching_case?: string | null;
     status?: CardStatus;
     is_reviewed?: boolean;
   }

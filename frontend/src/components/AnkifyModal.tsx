@@ -33,6 +33,33 @@ const RATINGS = [
   { label: 'Easy',  time: '8d',  color: 'hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700', key: '4' },
 ];
 
+function CollapsibleSection({ title, html }: { title: string; html: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3 bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center justify-between w-full px-5 py-3 text-left hover:bg-gray-50 transition-colors duration-150"
+      >
+        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">{title}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-5 pb-4 text-sm text-gray-700 leading-relaxed border-t border-gray-100" dangerouslySetInnerHTML={{ __html: html }} />
+      )}
+    </div>
+  );
+}
+
 export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
@@ -123,6 +150,14 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Additional context</p>
               <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{card.extra}</div>
             </div>
+          )}
+
+          {/* Collapsible vignette + teaching case — shown after reveal */}
+          {revealed && card.vignette && (
+            <CollapsibleSection title="Vignette" html={card.vignette} />
+          )}
+          {revealed && card.teaching_case && (
+            <CollapsibleSection title="Teaching Case" html={card.teaching_case} />
           )}
         </div>
       </div>

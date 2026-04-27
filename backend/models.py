@@ -68,6 +68,8 @@ class Card(Base):
     front_text: Mapped[str] = mapped_column(Text)
     tags: Mapped[list] = mapped_column(JSON, default=list)
     extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    vignette: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    teaching_case: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[CardStatus] = mapped_column(Enum(CardStatus), default=CardStatus.active)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     is_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -18,6 +18,12 @@ def _run_migrations():
         if 'is_reviewed' not in cols:
             conn.execute(text("ALTER TABLE cards ADD COLUMN is_reviewed BOOLEAN NOT NULL DEFAULT 0"))
             conn.commit()
+        if 'vignette' not in cols:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN vignette TEXT"))
+            conn.commit()
+        if 'teaching_case' not in cols:
+            conn.execute(text("ALTER TABLE cards ADD COLUMN teaching_case TEXT"))
+            conn.commit()
 
 
 def seed_data():

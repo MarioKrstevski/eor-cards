@@ -80,6 +80,8 @@ export interface Card {
   front_text: string;
   tags: string[];
   extra: string | null;
+  vignette: string | null;
+  teaching_case: string | null;
   status: CardStatus;
   is_reviewed: boolean;
   created_at: string;
