@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
-from backend.models import Curriculum, Chunk, Card, CardStatus
+from backend.models import Curriculum, Chunk, Card, CardStatus, Document
 import anthropic
 from backend.config import ANTHROPIC_API_KEY, DEFAULT_MODEL, DEFAULT_CHUNKING_MODEL, compute_cost
 from backend.models import AIUsageLog
@@ -134,14 +134,17 @@ def delete_node(node_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
+class ConfirmReassignRequest(BaseModel):
+    topics: list[dict]  # [{chunk_id: int, topic_id: int | null}]
+
+
 @router.post("/{node_id}/reassign-topics")
-def reassign_topics(node_id: int, chunking_model: str = DEFAULT_CHUNKING_MODEL, db: Session = Depends(get_db)):
-    """Re-run AI topic detection for chunks currently assigned to this node's subtree."""
+def reassign_topics_preview(node_id: int, chunking_model: str = DEFAULT_CHUNKING_MODEL, db: Session = Depends(get_db)):
+    """Run AI topic detection for chunks in subtree, return suggestions without saving."""
     node = db.get(Curriculum, node_id)
     if not node:
         raise HTTPException(404)
 
-    # Collect all node IDs in subtree
     def subtree_ids(nid: int) -> set:
         ids = {nid}
         for child in db.query(Curriculum).filter_by(parent_id=nid).all():
@@ -149,10 +152,12 @@ def reassign_topics(node_id: int, chunking_model: str = DEFAULT_CHUNKING_MODEL, 
         return ids
 
     ids = subtree_ids(node_id)
-
     chunks = db.query(Chunk).filter(Chunk.topic_id.in_(ids)).all()
     if not chunks:
-        return {"reassigned": 0}
+        return {"chunks": [], "ai_costs": {"topic_detection_usd": 0.0, "total_usd": 0.0}}
+
+    doc_ids = {c.document_id for c in chunks if c.document_id}
+    docs = {d.id: d for d in db.query(Document).filter(Document.id.in_(doc_ids)).all()}
 
     all_nodes = db.query(Curriculum).all()
     curriculum_nodes = [{"id": n.id, "path": n.path} for n in all_nodes]
@@ -161,32 +166,62 @@ def reassign_topics(node_id: int, chunking_model: str = DEFAULT_CHUNKING_MODEL, 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     mappings, usage = detect_chunk_topics(client, chunk_dicts, curriculum_nodes, model=chunking_model)
 
-    for m in mappings:
-        chunk = db.get(Chunk, m["chunk_id"])
-        if chunk:
-            old_topic_id = chunk.topic_id
-            chunk.topic_id = m["topic_id"]
-            chunk.topic_path = m["topic_path"]
-            # Update card tags to reflect new leaf topic name
-            if m["topic_id"] and m["topic_id"] != old_topic_id:
-                new_node = db.get(Curriculum, m["topic_id"])
-                if new_node:
-                    leaf_name = new_node.name
-                    for card in db.query(Card).filter_by(chunk_id=chunk.id).all():
-                        tags = list(card.tags or [])
-                        if leaf_name not in tags:
-                            card.tags = tags + [leaf_name]
-
-    db.commit()
-
+    cost = compute_cost(chunking_model, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
     if usage.get("input_tokens", 0):
         db.add(AIUsageLog(
             operation="topic_detection",
             model=chunking_model,
             input_tokens=usage.get("input_tokens", 0),
             output_tokens=usage.get("output_tokens", 0),
-            cost_usd=compute_cost(chunking_model, usage.get("input_tokens", 0), usage.get("output_tokens", 0)),
+            cost_usd=cost,
         ))
         db.commit()
 
-    return {"reassigned": len(mappings)}
+    suggestions = {m["chunk_id"]: {"topic_id": m["topic_id"], "topic_path": m["topic_path"]} for m in mappings}
+    chunks_response = []
+    for ch in chunks:
+        s = suggestions.get(ch.id, {})
+        doc = docs.get(ch.document_id)
+        chunks_response.append({
+            "id": ch.id,
+            "chunk_index": ch.chunk_index,
+            "heading": ch.heading,
+            "source_html": ch.source_html,
+            "topic_id": s.get("topic_id"),
+            "topic_path": s.get("topic_path"),
+            "document_id": ch.document_id,
+            "document_name": doc.original_name if doc else None,
+        })
+
+    return {
+        "chunks": chunks_response,
+        "ai_costs": {"topic_detection_usd": cost, "total_usd": cost},
+    }
+
+
+@router.post("/{node_id}/reassign-topics/confirm")
+def reassign_topics_confirm(node_id: int, body: ConfirmReassignRequest, db: Session = Depends(get_db)):
+    """Save user-reviewed topic assignments and update card tags."""
+    topic_map = {n.id: n.path for n in db.query(Curriculum).all()}
+
+    for item in body.topics:
+        chunk = db.get(Chunk, item["chunk_id"])
+        if not chunk:
+            continue
+        old_topic_id = chunk.topic_id
+        tid = item.get("topic_id")
+        chunk.topic_id = tid
+        chunk.topic_path = topic_map.get(tid) if tid else None
+        chunk.topic_confirmed = True
+
+        if tid and tid != old_topic_id:
+            new_node = db.get(Curriculum, tid)
+            if new_node:
+                leaf_name = new_node.name
+                for card in db.query(Card).filter_by(chunk_id=chunk.id).all():
+                    tags = list(card.tags or [])
+                    if leaf_name not in tags:
+                        card.tags = tags + [leaf_name]
+
+    db.commit()
+    return {"confirmed": len(body.topics)}

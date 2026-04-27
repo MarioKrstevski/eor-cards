@@ -17,7 +17,8 @@ import {
   createCurriculumNode,
   updateCurriculumNode,
   deleteCurriculumNode,
-  reassignTopics,
+  previewReassignTopics,
+  confirmReassignTopics,
 } from '../api';
 import type {
   CurriculumNode,
@@ -26,6 +27,7 @@ import type {
   ChunkWithTopic,
   CostEstimate,
   UploadResult,
+  ReassignPreviewResult,
 } from '../types';
 import CardsPanel from './CardsPanel';
 import ConfirmModal from '../components/ConfirmModal';
@@ -476,6 +478,170 @@ function TopicConfirmScreen({
   );
 }
 
+// ── ReassignReviewScreen ──────────────────────────────────────────────────────
+
+interface ReassignReviewScreenProps {
+  nodeId: number;
+  nodeName: string;
+  previewResult: ReassignPreviewResult;
+  flatCurriculum: CurriculumNode[];
+  onConfirmed: () => void;
+  onDismiss: () => void;
+  refreshUsage: () => void;
+}
+
+function ReassignReviewScreen({
+  nodeId,
+  nodeName,
+  previewResult,
+  flatCurriculum,
+  onConfirmed,
+  onDismiss,
+  refreshUsage,
+}: ReassignReviewScreenProps) {
+  const [topicMap, setTopicMap] = useState<Record<number, number | null>>(() => {
+    const init: Record<number, number | null> = {};
+    for (const chunk of previewResult.chunks) {
+      init[chunk.id] = chunk.topic_id;
+    }
+    return init;
+  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  function stripHtml(html: string): string {
+    return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  async function handleConfirm() {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const topics = Object.entries(topicMap).map(([chunkId, topicId]) => ({
+        chunk_id: Number(chunkId),
+        topic_id: topicId,
+      }));
+      await confirmReassignTopics(nodeId, topics);
+      setSaved(true);
+      refreshUsage();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save topics');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const { ai_costs } = previewResult;
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 top-11 z-40 bg-white flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-5 shadow-[0_1px_3px_0_rgba(0,0,0,0.05)] shrink-0">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Review reassigned topics</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Under <span className="font-medium text-gray-700">{nodeName}</span>
+            {' '}— {previewResult.chunks.length} chunk{previewResult.chunks.length !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500 bg-gray-50 rounded-full px-3 py-1.5 font-medium">
+            AI:{' '}
+            <span className="font-semibold text-blue-700">
+              ${ai_costs.topic_detection_usd.toFixed(4)}
+            </span>
+          </span>
+          <button
+            onClick={onDismiss}
+            className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 transition-colors duration-150"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Chunk list */}
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="max-w-3xl mx-auto flex flex-col gap-3">
+          {previewResult.chunks.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-10">No chunks found under this topic.</p>
+          ) : (
+            previewResult.chunks.map((chunk, idx) => {
+              const preview = stripHtml(chunk.source_html).slice(0, 80);
+              return (
+                <div key={chunk.id} className="bg-white rounded-xl shadow-md border border-gray-200 p-5">
+                  <div className="flex items-start gap-3">
+                    <span className="text-[10px] text-gray-400 mt-0.5 shrink-0 font-medium">#{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      {chunk.document_name && (
+                        <p className="text-[10px] font-medium text-blue-500 mb-1 truncate">{chunk.document_name}</p>
+                      )}
+                      {chunk.heading && (
+                        <p className="text-xs font-semibold text-gray-800 mb-1.5">{chunk.heading}</p>
+                      )}
+                      <p className="text-xs text-gray-500 mb-3 line-clamp-2 leading-relaxed">
+                        {preview}{stripHtml(chunk.source_html).length > 80 ? '...' : ''}
+                      </p>
+                      <CurriculumPicker
+                        flatNodes={flatCurriculum}
+                        value={topicMap[chunk.id] ?? null}
+                        onChange={(id) => setTopicMap((prev) => ({ ...prev, [chunk.id]: id }))}
+                        placeholder="-- unassigned --"
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div className="shrink-0 shadow-[0_-1px_3px_0_rgba(0,0,0,0.05)] px-6 py-4">
+        <div className="max-w-3xl mx-auto">
+          {saveError && <p className="text-xs text-red-600 mb-3">{saveError}</p>}
+          {!saved ? (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleConfirm}
+                disabled={saving}
+                className="px-5 py-2.5 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:opacity-50 transition-colors duration-150"
+              >
+                {saving ? 'Saving...' : 'Confirm topics'}
+              </button>
+              <button
+                onClick={onDismiss}
+                className="px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors duration-150"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-green-700 font-medium flex items-center gap-1.5">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Topics saved!
+              </span>
+              <button
+                onClick={onConfirmed}
+                className="px-4 py-2.5 text-sm font-medium text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors duration-150"
+              >
+                Done
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── WorkspacePage ─────────────────────────────────────────────────────────────
 
 interface WorkspacePageProps {
@@ -508,7 +674,8 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   const [topicEditMode, setTopicEditMode] = useState(false);
   const [confirmDeleteTopicId, setConfirmDeleteTopicId] = useState<number | null>(null);
   const [reassignLoading, setReassignLoading] = useState(false);
-  const [confirmReassignTopicId, setConfirmReassignTopicId] = useState<number | null>(null);
+  const [reassignPreviewResult, setReassignPreviewResult] = useState<ReassignPreviewResult | null>(null);
+  const [reassignPreviewNodeId, setReassignPreviewNodeId] = useState<number | null>(null);
   const [addingRootTopic, setAddingRootTopic] = useState(false);
   const [rootTopicName, setRootTopicName] = useState('');
 
@@ -599,19 +766,24 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     refreshCoverage();
   }
 
-  async function handleReassignTopicsConfirmed() {
-    if (confirmReassignTopicId == null) return;
-    const id = confirmReassignTopicId;
-    setConfirmReassignTopicId(null);
+  async function handleReassignTopicsClick() {
+    if (selectedTopicId == null) return;
     setReassignLoading(true);
     try {
-      await reassignTopics(id, chunkingModel);
-      setCardsRefreshKey((k) => k + 1);
-      refreshCoverage();
+      const result = await previewReassignTopics(selectedTopicId, chunkingModel);
+      setReassignPreviewNodeId(selectedTopicId);
+      setReassignPreviewResult(result);
       refreshUsage();
     } finally {
       setReassignLoading(false);
     }
+  }
+
+  function handleReassignConfirmed() {
+    setReassignPreviewResult(null);
+    setReassignPreviewNodeId(null);
+    setCardsRefreshKey((k) => k + 1);
+    refreshCoverage();
   }
 
   async function handleAddRootTopic(name: string) {
@@ -1258,7 +1430,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                       </button>
                       {selectedTopicId != null && (
                         <button
-                          onClick={() => setConfirmReassignTopicId(selectedTopicId)}
+                          onClick={handleReassignTopicsClick}
                           disabled={reassignLoading}
                           title="Re-run AI topic detection for cards under this topic"
                           className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 disabled:opacity-50 transition-colors duration-150"
@@ -1594,18 +1766,17 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
       )}
 
       {/* Delete topic confirm */}
-      {confirmReassignTopicId != null && (() => {
-        const node = flatCurriculum.find(n => n.id === confirmReassignTopicId);
-        return (
-          <ConfirmModal
-            title="Reassign topics?"
-            message={`Re-run AI topic detection for all chunks under "${node?.name}". This will use AI tokens and update card tags to match new topic assignments.`}
-            confirmLabel="Reassign"
-            onConfirm={handleReassignTopicsConfirmed}
-            onCancel={() => setConfirmReassignTopicId(null)}
-          />
-        );
-      })()}
+      {reassignPreviewResult != null && reassignPreviewNodeId != null && (
+        <ReassignReviewScreen
+          nodeId={reassignPreviewNodeId}
+          nodeName={flatCurriculum.find(n => n.id === reassignPreviewNodeId)?.name ?? ''}
+          previewResult={reassignPreviewResult}
+          flatCurriculum={flatCurriculum}
+          onConfirmed={handleReassignConfirmed}
+          onDismiss={() => { setReassignPreviewResult(null); setReassignPreviewNodeId(null); }}
+          refreshUsage={refreshUsage}
+        />
+      )}
 
       {confirmDeleteTopicId != null && (() => {
         const node = flatCurriculum.find(n => n.id === confirmDeleteTopicId);

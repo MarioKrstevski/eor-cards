@@ -5,6 +5,7 @@ import type {
   RuleSet,
   Document,
   UploadResult,
+  ReassignPreviewResult,
   Card,
   CardStatus,
   Model,
@@ -48,9 +49,17 @@ export async function deleteCurriculumNode(id: number): Promise<void> {
   await http.delete(`/curriculum/${id}`);
 }
 
-export async function reassignTopics(id: number, chunkingModel?: string): Promise<{ reassigned: number }> {
+export async function previewReassignTopics(id: number, chunkingModel?: string): Promise<ReassignPreviewResult> {
   const params = chunkingModel ? { chunking_model: chunkingModel } : undefined;
-  const res = await http.post<{ reassigned: number }>(`/curriculum/${id}/reassign-topics`, undefined, { params });
+  const res = await http.post<ReassignPreviewResult>(`/curriculum/${id}/reassign-topics`, undefined, { params });
+  return res.data;
+}
+
+export async function confirmReassignTopics(
+  id: number,
+  topics: { chunk_id: number; topic_id: number | null }[]
+): Promise<{ confirmed: number }> {
+  const res = await http.post<{ confirmed: number }>(`/curriculum/${id}/reassign-topics/confirm`, { topics });
   return res.data;
 }
 

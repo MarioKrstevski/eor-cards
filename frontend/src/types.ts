@@ -67,6 +67,22 @@ export interface UploadResult {
   };
 }
 
+export interface ReassignPreviewChunk {
+  id: number;
+  chunk_index: number;
+  heading: string | null;
+  source_html: string;
+  topic_id: number | null;
+  topic_path: string | null;
+  document_id: number;
+  document_name: string | null;
+}
+
+export interface ReassignPreviewResult {
+  chunks: ReassignPreviewChunk[];
+  ai_costs: { topic_detection_usd: number; total_usd: number };
+}
+
 // ─── Cards ────────────────────────────────────────────────────────────────────
 
 export type CardStatus = 'active' | 'rejected';
