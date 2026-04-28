@@ -10,6 +10,8 @@ router = APIRouter()
 class RuleSetCreate(BaseModel):
     name: str
     content: str
+    is_default: bool = False
+    rule_type: str = "generation"
 
 class RuleSetUpdate(BaseModel):
     name: Optional[str] = None
@@ -21,16 +23,20 @@ def ruleset_to_dict(rs: RuleSet) -> dict:
         "name": rs.name,
         "content": rs.content,
         "is_default": rs.is_default,
+        "rule_type": rs.rule_type,
         "created_at": rs.created_at.isoformat() if rs.created_at else None,
     }
 
 @router.get("")
-def list_rules(db: Session = Depends(get_db)):
-    return [ruleset_to_dict(rs) for rs in db.query(RuleSet).all()]
+def list_rules(rule_type: str = None, db: Session = Depends(get_db)):
+    q = db.query(RuleSet)
+    if rule_type:
+        q = q.filter_by(rule_type=rule_type)
+    return [ruleset_to_dict(rs) for rs in q.all()]
 
 @router.post("", status_code=201)
 def create_rule_set(body: RuleSetCreate, db: Session = Depends(get_db)):
-    rs = RuleSet(name=body.name, content=body.content, is_default=False)
+    rs = RuleSet(name=body.name, content=body.content, is_default=False, rule_type=body.rule_type)
     db.add(rs)
     db.commit()
     db.refresh(rs)
@@ -64,7 +70,7 @@ def set_default(rs_id: int, db: Session = Depends(get_db)):
     rs = db.get(RuleSet, rs_id)
     if not rs:
         raise HTTPException(404)
-    db.query(RuleSet).update({"is_default": False})
+    db.query(RuleSet).filter(RuleSet.rule_type == rs.rule_type, RuleSet.is_default == True).update({"is_default": False})
     rs.is_default = True
     db.commit()
     db.refresh(rs)
