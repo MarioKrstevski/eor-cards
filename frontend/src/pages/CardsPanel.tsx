@@ -63,9 +63,10 @@ interface EditableCellProps {
   onNavigate: (dir: 'up' | 'down' | 'left' | 'right') => void;
   multiline?: boolean;
   renderDisplay?: (val: string) => React.ReactNode;
+  clampLines?: number; // max lines to show in display mode (0 = no clamp)
 }
 
-function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, renderDisplay }: EditableCellProps) {
+function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, renderDisplay, clampLines }: EditableCellProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [localVal, setLocalVal] = useState(value);
   const divRef = useRef<HTMLDivElement>(null);
@@ -112,12 +113,12 @@ function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, 
           <textarea
             ref={textareaRef}
             value={localVal}
-            onChange={(e) => { setLocalVal(e.target.value); autoResize(e.target); }}
+            onChange={(e) => { setLocalVal(e.target.value); if (!clampLines) autoResize(e.target); }}
             onBlur={save}
             onKeyDown={keyDown}
             autoFocus
-            className="w-full text-sm bg-white border-0 outline-none p-0 leading-relaxed resize-none overflow-hidden"
-            style={{ minHeight: '2rem' }}
+            className={`w-full text-sm bg-white border-0 outline-none p-0 leading-relaxed resize-none ${clampLines ? 'overflow-auto' : 'overflow-hidden'}`}
+            style={{ minHeight: '2rem', ...(clampLines ? { height: '20em' } : {}) }}
           />
         ) : (
           <input
@@ -150,7 +151,10 @@ function EditableCell({ value, cellId, onSelect, onSave, onNavigate, multiline, 
         if (e.key === 'Enter') { e.preventDefault(); startEdit(); }
       }}
       className="cursor-default outline-none w-full h-full"
-      style={{ minHeight: '2rem' }}
+      style={{
+        minHeight: '2rem',
+        ...(clampLines ? { maxHeight: `${clampLines * 1.6}em`, overflow: 'hidden' } : {}),
+      }}
     >
       {renderDisplay ? renderDisplay(value) : <span className="text-sm text-gray-800">{value}</span>}
     </div>
@@ -1239,6 +1243,7 @@ export default function CardsPanel({
               onSave={(v) => saveFieldInline(card.id, 'vignette', v)}
               onNavigate={(dir) => handleCellNavigate(rowIndex, 'vignette', dir, totalPageRows)}
               multiline
+              clampLines={4}
               renderDisplay={(v) =>
                 v
                   ? <div className="text-sm text-gray-800 leading-relaxed whitespace-normal break-words" dangerouslySetInnerHTML={{ __html: v }} />
@@ -1265,6 +1270,7 @@ export default function CardsPanel({
               onSave={(v) => saveFieldInline(card.id, 'teaching_case', v)}
               onNavigate={(dir) => handleCellNavigate(rowIndex, 'teaching_case', dir, totalPageRows)}
               multiline
+              clampLines={4}
               renderDisplay={(v) =>
                 v
                   ? <div className="text-sm text-gray-800 leading-relaxed whitespace-normal break-words" dangerouslySetInnerHTML={{ __html: v }} />

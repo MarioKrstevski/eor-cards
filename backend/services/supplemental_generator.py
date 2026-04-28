@@ -2,6 +2,10 @@
 import anthropic
 from backend.config import compute_cost
 
+FORMAT_INSTRUCTION = """FORMATTING: Output HTML, not markdown. Use <b> for bold, <i> for italic, \
+<br> for line breaks. Do NOT use markdown syntax (**, *, #, backticks). \
+The output will be rendered as HTML in a browser."""
+
 def generate_supplemental_for_card(
     client: anthropic.Anthropic,
     card: dict,
@@ -29,7 +33,7 @@ Generate a {label} for this card following the rules above."""
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": rules_text, "cache_control": {"type": "ephemeral"}},
+                    {"type": "text", "text": FORMAT_INSTRUCTION + "\n\n" + rules_text, "cache_control": {"type": "ephemeral"}},
                     {"type": "text", "text": card_context},
                 ],
             }
