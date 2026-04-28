@@ -1,4 +1,6 @@
 import logging
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -179,6 +181,7 @@ def _run_generation(
                     "heading": chunk.heading,
                     "topic_path": chunk.topic_path,
                     "topic_id": chunk.topic_id,
+                    "ref_img": chunk.ref_img,
                 }
             else:
                 logger.warning("Chunk %d not found during generation job %d, skipping", chunk_id, job_id)
@@ -189,6 +192,16 @@ def _run_generation(
             tid = ch.get("topic_id")
             if tid:
                 chunks_by_topic.setdefault(tid, []).append(ch)
+
+        note_id_base = int(time.time() * 1000)
+        note_id_counter = {"value": 0}
+        note_id_lock = threading.Lock()
+
+        def next_note_id():
+            with note_id_lock:
+                nid = note_id_base + note_id_counter["value"]
+                note_id_counter["value"] += 1
+                return nid
 
         if replace_existing:
             for chunk_id in chunks_by_id:
@@ -222,6 +235,8 @@ def _run_generation(
                         front_text=card_data["front_text"],
                         tags=tags,
                         needs_review=needs_review,
+                        ref_img=chunk_data.get("ref_img"),
+                        note_id=next_note_id(),
                     )
                     db.add(card)
                 db.query(Chunk).filter(Chunk.id == chunk_data["id"]).update({"card_count": len(cards_data)})
