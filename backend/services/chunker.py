@@ -24,6 +24,8 @@ PIC_NS = "http://schemas.openxmlformats.org/drawingml/2006/picture"
 
 INDENT_LEVEL_BASE = 3
 
+IMG_DATA_URI_RE = re.compile(r'<img[^>]+src="(data:image/[^"]+)"', re.IGNORECASE)
+
 
 def extract_images_from_paragraph(para, doc, img_dir, doc_prefix, para_idx):
     """Extract images from a paragraph, save to disk, return list of image info dicts."""
@@ -386,16 +388,19 @@ def assemble_chunks(elements: list, claude_chunks: list) -> list:
             if t not in seen:
                 seen.add(t)
                 unique_bold.append(t)
+        source_html = "\n".join(source_html_parts)
+        img_match = IMG_DATA_URI_RE.search(source_html)
         result_chunks.append({
             "chunk_index": cc["chunk_index"],
             "heading": cc["heading"],
             "content_type": cc["content_type"],
             "rule_subset": cc.get("rule_subset", ["cloze_boundaries"]),
             "source_text": "\n".join(source_text_parts),
-            "source_html": "\n".join(source_html_parts),
+            "source_html": source_html,
             "bold_terms": unique_bold,
             "element_range": cc["element_range"],
             "images": all_images,
+            "ref_img": img_match.group(1) if img_match else None,
         })
     return result_chunks
 
