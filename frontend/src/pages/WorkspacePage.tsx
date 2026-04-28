@@ -649,7 +649,7 @@ interface WorkspacePageProps {
 }
 
 export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
-  const { selectedModel, chunkingModel, selectedRuleSetId } = useSettings();
+  const { selectedModel, selectedRuleSetId } = useSettings();
   const location = useLocation();
 
   // Documents
@@ -770,7 +770,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     if (selectedTopicId == null) return;
     setReassignLoading(true);
     try {
-      const result = await previewReassignTopics(selectedTopicId, chunkingModel);
+      const result = await previewReassignTopics(selectedTopicId);
       setReassignPreviewNodeId(selectedTopicId);
       setReassignPreviewResult(result);
       refreshUsage();
@@ -869,7 +869,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     setUploadError(null);
     setUploading(true);
     try {
-      const result = await uploadDocument(file, chunkingModel);
+      const result = await uploadDocument(file);
       await fetchDocuments();
       setPendingUpload(result);
       refreshUsage();
@@ -995,7 +995,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     setPasteError(null);
     setPasting(true);
     try {
-      const result = await pasteDocument(pastedHtml, pasteName.trim(), chunkingModel);
+      const result = await pasteDocument(pastedHtml, pasteName.trim());
       await fetchDocuments();
       setShowPasteModal(false);
       setPendingUpload(result);

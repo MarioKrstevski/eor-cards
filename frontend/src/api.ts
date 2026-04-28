@@ -51,9 +51,8 @@ export async function deleteCurriculumNode(id: number): Promise<void> {
   await http.delete(`/curriculum/${id}`);
 }
 
-export async function previewReassignTopics(id: number, chunkingModel?: string): Promise<ReassignPreviewResult> {
-  const params = chunkingModel ? { chunking_model: chunkingModel } : undefined;
-  const res = await http.post<ReassignPreviewResult>(`/curriculum/${id}/reassign-topics`, undefined, { params });
+export async function previewReassignTopics(id: number): Promise<ReassignPreviewResult> {
+  const res = await http.post<ReassignPreviewResult>(`/curriculum/${id}/reassign-topics`);
   return res.data;
 }
 
@@ -112,16 +111,15 @@ export async function getDocument(id: number): Promise<Document> {
   return res.data;
 }
 
-export async function uploadDocument(file: File, chunkingModel?: string): Promise<UploadResult> {
+export async function uploadDocument(file: File): Promise<UploadResult> {
   const form = new FormData();
   form.append('file', file);
-  const params = chunkingModel ? { chunking_model: chunkingModel } : undefined;
-  const res = await http.post<UploadResult>('/documents/upload', form, { params });
+  const res = await http.post<UploadResult>('/documents/upload', form);
   return res.data;
 }
 
-export async function pasteDocument(html: string, name: string, chunkingModel?: string): Promise<UploadResult> {
-  const res = await http.post<UploadResult>('/documents/paste', { html, name, chunking_model: chunkingModel });
+export async function pasteDocument(html: string, name: string): Promise<UploadResult> {
+  const res = await http.post<UploadResult>('/documents/paste', { html, name });
   return res.data;
 }
 
