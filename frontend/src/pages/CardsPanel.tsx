@@ -1024,7 +1024,8 @@ export default function CardsPanel({
     () => [
       columnHelper.display({
         id: 'select',
-        size: 44,
+        size: 64,
+        minSize: 64,
         enableHiding: false,
         header: (ctx) => {
           const pageRows = ctx.table.getRowModel().rows;
@@ -1049,14 +1050,14 @@ export default function CardsPanel({
           const card = info.row.original;
           const rowIndex = info.row.index;
           return (
-            <div className="flex flex-col items-center gap-1 py-0.5">
+            <div className="flex flex-col items-center justify-between h-full py-1">
               <input
                 type="checkbox"
                 checked={selectedIds.has(id)}
                 onChange={() => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
                 className="w-4 h-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500"
               />
-              <div className="grid grid-cols-2 gap-0.5 mt-1.5">
+              <div className="grid grid-cols-2 gap-0.5">
                 <button
                   onClick={() => {
                     const div = tableContainerRef.current?.querySelector(
@@ -1138,9 +1139,9 @@ export default function CardsPanel({
           return (
             <div className="flex flex-col items-center gap-0.5">
               <span className={`text-xs tabular-nums ${!card.is_reviewed ? 'font-bold text-gray-900' : 'font-normal text-gray-400'}`}>{info.getValue()}</span>
-              <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-              <button onClick={(e) => { e.stopPropagation(); setChunkInfoCard(card); }} title="View source chunk" className="text-gray-300 hover:text-blue-500 transition-colors duration-150">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <span className={`w-2 h-2 rounded-full ${dotColor}`} />
+              <button onClick={(e) => { e.stopPropagation(); setChunkInfoCard(card); }} title="View source chunk" className="text-gray-300 hover:text-blue-500 transition-colors duration-150 p-0.5">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </button>
@@ -1762,11 +1763,16 @@ export default function CardsPanel({
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-[10px] font-mono text-gray-400 shrink-0">#{chunkInfoCard.chunk_id}</span>
+                <span className="text-[10px] font-mono text-gray-400 shrink-0">Chunk #{chunkInfoCard.chunk_id}</span>
                 {chunkInfoCard.chunk_heading && <span className="text-xs font-semibold text-gray-800 truncate">{chunkInfoCard.chunk_heading}</span>}
                 {chunkInfoCard.topic_path && (
                   <span className="text-[10px] text-blue-600 truncate hidden sm:block" title={chunkInfoCard.topic_path}>
                     {chunkInfoCard.topic_path.split(' > ').slice(-2).join(' › ')}
+                  </span>
+                )}
+                {chunkInfoCard.note_id && (
+                  <span className="text-[10px] font-mono text-gray-400 shrink-0" title="Anki Note ID">
+                    NID: {chunkInfoCard.note_id}
                   </span>
                 )}
               </div>
