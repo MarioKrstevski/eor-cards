@@ -178,9 +178,17 @@ def _run_generation(
                     "source_text": chunk.source_text,
                     "heading": chunk.heading,
                     "topic_path": chunk.topic_path,
+                    "topic_id": chunk.topic_id,
                 }
             else:
                 logger.warning("Chunk %d not found during generation job %d, skipping", chunk_id, job_id)
+
+        # Group chunks by topic_id for sibling context
+        chunks_by_topic = {}
+        for ch in chunks_by_id.values():
+            tid = ch.get("topic_id")
+            if tid:
+                chunks_by_topic.setdefault(tid, []).append(ch)
 
         if replace_existing:
             for chunk_id in chunks_by_id:
@@ -188,12 +196,15 @@ def _run_generation(
             db.commit()
 
         def process_chunk(chunk_data):
+            tid = chunk_data.get("topic_id")
+            siblings = [s for s in chunks_by_topic.get(tid, []) if s["id"] != chunk_data["id"]] if tid else []
             cards_data, needs_review, usage = generate_cards_for_chunk(
                 client,
                 {"source_text": chunk_data["source_text"], "heading": chunk_data["heading"],
                  "topic_path": chunk_data["topic_path"]},
                 rules_text,
                 model,
+                sibling_texts=siblings,
             )
             return chunk_data, cards_data, needs_review, usage
 

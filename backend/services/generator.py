@@ -2,6 +2,13 @@ import re
 import anthropic
 from backend.config import DEFAULT_MODEL
 
+ANCHOR_INSTRUCTION = """CRITICAL RULE — Anchor term: Every card must contain a visible, unclosed "anchor" \
+that tells the student what topic/condition/concept they are being tested on. \
+Determine the anchor from the topic path, section heading, and content context. \
+The anchor is usually the disease, condition, or concept name. \
+NEVER cloze the anchor — it must remain readable so the student knows what \
+they are studying and can recall the associated facts."""
+
 
 def strip_card_html(card_text: str) -> str:
     """Strip HTML tags and reveal cloze terms to produce plain text."""
@@ -96,6 +103,7 @@ def generate_cards_for_chunk(
     chunk: dict,
     rules_text: str,
     model: str = DEFAULT_MODEL,
+    sibling_texts: list[dict] = None,
 ) -> tuple[list[dict], bool, dict]:
     """Generate cards for a single chunk using Claude.
 
@@ -103,14 +111,28 @@ def generate_cards_for_chunk(
     {"input_tokens": int, "output_tokens": int}.
     Rules text is marked for prompt caching — repeated calls within 5 min
     reuse the cached prefix, cutting input token cost ~90% for the rules portion.
+    sibling_texts: list of sibling chunk dicts (same topic_id) for context only.
     """
     topic = chunk.get('topic_path') or ''
     topic_line = f"Curriculum context (for reference only): {topic}\n" if topic else ''
 
+    sibling_section = ""
+    if sibling_texts:
+        parts = []
+        total_chars = 0
+        for s in sibling_texts:
+            if total_chars + len(s["source_text"]) > 32000:  # ~8000 token cap
+                break
+            parts.append(f'[Chunk "{s["heading"]}"]:' + "\n" + s["source_text"])
+            total_chars += len(s["source_text"])
+        if parts:
+            sibling_section = "\n\n--- RELATED CONTENT (context only — do NOT generate cards from this) ---\n" + "\n\n".join(parts)
+
     chunk_prompt = (
         f"Now generate cards from the following study note content.\n\n"
         f"{topic_line}Section: {chunk.get('heading', '')}\n\n"
-        f"Source text:\n{chunk.get('source_text', '')}\n\n"
+        f"Source text:\n{chunk.get('source_text', '')}"
+        f"{sibling_section}\n\n"
         f"Generate the cards following ALL the rules above. Output in the exact format:\n"
         f"number|cloze card text\n\n"
         f"If you cannot confidently generate quality cards for this content, output NEEDS_REVIEW on its own line at the end.\n"
@@ -125,7 +147,7 @@ def generate_cards_for_chunk(
             "content": [
                 {
                     "type": "text",
-                    "text": rules_text + "\n\n---\n\n",
+                    "text": ANCHOR_INSTRUCTION + "\n\n" + rules_text + "\n\n---\n\n",
                     "cache_control": {"type": "ephemeral"},
                 },
                 {

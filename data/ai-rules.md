@@ -5,6 +5,11 @@
 
 ---
 
+## Anchor Term Rule
+Every card must have a visible "anchor" — the condition, disease, or concept name that tells the student what they're being tested on. NEVER cloze the anchor. The student needs to see it to know what to recall.
+
+---
+
 ## Generation Instructions
 
 Convert the following into numbered Anki Cloze cards formatted for Excel. Output exactly two columns separated by a single pipe | character with no spaces before or after the pipe. Each row must contain exactly one pipe character total. Column 1 must contain the card number only. Column 2 must contain the cloze card text only. Do not include any additional pipe characters anywhere in the output.
