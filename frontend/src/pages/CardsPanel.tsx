@@ -532,11 +532,13 @@ function TagsCell({ tags, cellId, onSelect, onSave, onNavigate }: TagsCellProps)
 
 // ── Column definitions for visibility toggle ───────────────────────────────────
 const OPTIONAL_COLUMNS = [
+  { id: 'ref_img', label: 'Ref Image' },
   { id: 'vignette', label: 'Vignette' },
   { id: 'teaching_case', label: 'Teaching Case' },
 ] as const;
 
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
+  ref_img: false,
   vignette: false,
   teaching_case: false,
 };
@@ -1098,6 +1100,40 @@ export default function CardsPanel({
               onSave={(t) => saveTagsInline(card.id, t)}
               onNavigate={(dir) => handleCellNavigate(rowIndex, 'tags', dir, totalPageRows)}
             />
+          );
+        },
+      }),
+      columnHelper.display({
+        id: 'ref_img',
+        header: 'Ref Image',
+        size: 200,
+        cell: ({ row }) => {
+          const card = row.original;
+          if (!card.ref_img) return <span className="text-gray-400 text-xs">No image</span>;
+          return (
+            <div className="flex flex-col items-center gap-1">
+              <img src={card.ref_img} alt="Reference" className="max-h-24 max-w-full rounded" />
+              <div className="flex gap-1">
+                <button
+                  className={`text-xs px-2 py-0.5 rounded ${card.ref_img_position === 'front' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                  onClick={async () => {
+                    try {
+                      const updated = await updateCard(card.id, { ref_img_position: 'front' });
+                      setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img_position: updated.ref_img_position } : c));
+                    } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
+                  }}
+                >Front</button>
+                <button
+                  className={`text-xs px-2 py-0.5 rounded ${card.ref_img_position === 'back' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                  onClick={async () => {
+                    try {
+                      const updated = await updateCard(card.id, { ref_img_position: 'back' });
+                      setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img_position: updated.ref_img_position } : c));
+                    } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
+                  }}
+                >Back</button>
+              </div>
+            </div>
           );
         },
       }),

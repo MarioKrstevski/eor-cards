@@ -136,6 +136,9 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
         <div className="w-full max-w-2xl mx-auto">
           {/* Card face */}
           <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-8">
+            {card.ref_img && card.ref_img_position === 'front' && (
+              <img src={card.ref_img} alt="Reference" className="max-h-48 mx-auto rounded mb-4" />
+            )}
             <div
               className="text-base leading-relaxed text-gray-800"
               dangerouslySetInnerHTML={{
@@ -150,6 +153,11 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Additional context</p>
               <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{card.extra}</div>
             </div>
+          )}
+
+          {/* ref_img back — shown after reveal */}
+          {revealed && card.ref_img && card.ref_img_position === 'back' && (
+            <img src={card.ref_img} alt="Reference" className="max-h-48 mx-auto rounded mb-4 mt-3" />
           )}
 
           {/* Collapsible vignette + teaching case — shown after reveal */}
