@@ -6,7 +6,7 @@ A tool for generating Anki-style cloze flashcards from medical study documents (
 ## Tech Stack
 - **Backend**: FastAPI + SQLAlchemy 2.0 + SQLite + Anthropic Python SDK
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS v4 + TanStack Table
-- **AI**: Anthropic Claude — Haiku 4.5 default for chunking, Sonnet 4.6 default for card generation (both configurable per-session via Settings popover, persisted in localStorage)
+- **AI**: Anthropic Claude — Haiku 4.5 fixed for chunking/topic detection, Sonnet 4.6 default for card/vignette/teaching case generation (generation models configurable per-session via Settings popover, persisted in localStorage)
 - **Dev**: Python 3.12 venv, Node 24, Vite dev server proxying `/api` to FastAPI on :8000
 
 ## Development Commands
@@ -40,7 +40,7 @@ v3/
 ├── frontend/src/
 │   ├── App.tsx            # Router + nav bar
 │   ├── context/
-│   │   └── SettingsContext.tsx  # selectedModel (generation), chunkingModel, selectedRuleSetId — all persisted to localStorage
+│   │   └── SettingsContext.tsx  # selectedModel, vignetteModel, teachingCaseModel, selectedRuleSetId, vignetteRuleSetId, teachingCaseRuleSetId — all persisted to localStorage
 │   ├── pages/
 │   │   ├── WorkspacePage.tsx   # Upload/paste, chunk view, card panel, generation
 │   │   ├── CardsPanel.tsx      # TanStack table + card grid, inline edit/regen/delete; AlertModal on job failure
@@ -61,12 +61,12 @@ v3/
 ```
 
 ## Database Schema (current)
-- **rule_sets**: id, name (unique), content, is_default, created_at
+- **rule_sets**: id, name, rule_type (generation/vignette/teaching_case), content, is_default (per rule_type), created_at. Unique on (name, rule_type).
 - **curriculum**: id, parent_id (self-FK), name, level, path (full breadcrumb), children/parent rels
 - **documents**: id, filename (uuid-prefixed), original_name, uploaded_at, chunk_count
-- **chunks**: id, document_id (FK cascade), chunk_index, heading, content_type, source_text, source_html, rule_subset (JSON), card_count, topic_id (FK → curriculum, nullable), topic_path (string), topic_confirmed (bool)
-- **cards**: id, chunk_id (FK cascade), document_id (FK cascade), card_number, front_html, front_text, tags (JSON), extra, status (active/rejected), needs_review, created_at, updated_at
-- **generation_jobs**: id, document_id, scope, chunk_ids (JSON), rule_set_id, model, status (pending/running/done/failed), total/processed_chunks, total_cards, estimated/actual tokens+cost, error_message, started_at, finished_at
+- **chunks**: id, document_id (FK cascade), chunk_index, heading, content_type, source_text, source_html, ref_img (base64 data URI, nullable), rule_subset (JSON), card_count, topic_id (FK → curriculum, nullable), topic_path (string), topic_confirmed (bool)
+- **cards**: id, chunk_id (FK cascade), document_id (FK cascade), card_number, front_html, front_text, tags (JSON), extra, vignette, teaching_case, ref_img, ref_img_position (front/back), note_id (bigint, Anki-compatible ms timestamp), status (active/rejected), needs_review, is_reviewed, created_at, updated_at
+- **generation_jobs**: id, document_id, job_type (cards/vignettes/teaching_cases), scope, chunk_ids (JSON), rule_set_id, model, status (pending/running/done/failed), total/processed_chunks, total_cards, estimated/actual tokens+cost, error_message, started_at, finished_at
 - **ai_usage_log**: id, operation (chunking/topic_detection/card_generation/card_regen), model, input_tokens, output_tokens, cost_usd, document_id, chunk_id, card_id, job_id, created_at
 
 ## Key Conventions
@@ -102,6 +102,8 @@ Every Claude API call logs to `ai_usage_log`:
 - Chunking: `operation="chunking"` with document_id
 - Topic detection: `operation="topic_detection"` with document_id
 - Card generation: `operation="card_generation"` with job_id
+- Vignette generation: `operation="vignette_generation"` with job_id
+- Teaching case generation: `operation="teaching_case_generation"` with job_id
 - Card regeneration: `operation="card_regen"` with card_id
 Use `GET /api/usage/summary` to return total and per-operation spend.
 
@@ -118,4 +120,7 @@ Use `GET /api/usage/summary` to return total and per-operation spend.
 - When in doubt about a topic path format, it is `Parent > Child > Leaf` with ` > ` separators (e.g. `Emergency Medicine > Cardiovascular > Endocarditis`).
 - Do not change card output format without updating both `generator.py` parsing logic and the frontend cloze renderer.
 - `topic_path` is passed to card generation prompts as "Curriculum context (for reference only)" — it's guidance, not a constraint.
+- Card generation injects a hardcoded "anchor term" instruction — the AI must determine the anchor (condition/concept name) from context and NEVER cloze it, so students know what they're being tested on.
+- Card generation includes sibling chunks (same topic_id) as read-only context to give the AI broader topic awareness.
+- Vignette/teaching case generation uses card front_text + tags + topic_path only (no chunk source text) to avoid parroting study notes.
 - The paste pipeline has debug output (saves raw HTML to `data/debug_paste.html` and prints element levels to stderr) — remove before production.
