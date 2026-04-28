@@ -33,6 +33,18 @@ class StartRequest(BaseModel):
     replace_existing: bool = True
 
 
+class SupplementalEstimateRequest(BaseModel):
+    card_ids: list[int]
+    model: str
+
+
+class SupplementalStartRequest(BaseModel):
+    card_ids: list[int]
+    rule_set_id: int
+    model: str
+    replace_existing: bool = False
+
+
 def _get_chunks(document_id: int, chunk_ids: Optional[list[int]], db: Session) -> list[Chunk]:
     doc = db.get(Document, document_id)
     if not doc:
@@ -116,6 +128,87 @@ def start_generation(
     }
 
 
+@router.post("/vignettes/estimate")
+def estimate_vignettes(body: SupplementalEstimateRequest, db: Session = Depends(get_db)):
+    count = db.query(Card).filter(Card.id.in_(body.card_ids)).count()
+    est_input = count * 200
+    est_output = count * 150
+    cost = compute_cost(body.model, est_input, est_output)
+    return {
+        "card_count": count,
+        "estimated_input_tokens": est_input,
+        "estimated_output_tokens": est_output,
+        "estimated_cost_usd": cost,
+        "model": body.model,
+    }
+
+
+@router.post("/teaching-cases/estimate")
+def estimate_teaching_cases(body: SupplementalEstimateRequest, db: Session = Depends(get_db)):
+    count = db.query(Card).filter(Card.id.in_(body.card_ids)).count()
+    est_input = count * 200
+    est_output = count * 300
+    cost = compute_cost(body.model, est_input, est_output)
+    return {
+        "card_count": count,
+        "estimated_input_tokens": est_input,
+        "estimated_output_tokens": est_output,
+        "estimated_cost_usd": cost,
+        "model": body.model,
+    }
+
+
+@router.post("/vignettes/start")
+def start_vignettes(body: SupplementalStartRequest, bg: BackgroundTasks, db: Session = Depends(get_db)):
+    return _start_supplemental(body, "vignettes", bg, db)
+
+
+@router.post("/teaching-cases/start")
+def start_teaching_cases(body: SupplementalStartRequest, bg: BackgroundTasks, db: Session = Depends(get_db)):
+    return _start_supplemental(body, "teaching_cases", bg, db)
+
+
+def _start_supplemental(body: SupplementalStartRequest, job_type: str, bg: BackgroundTasks, db: Session):
+    rs = db.get(RuleSet, body.rule_set_id)
+    if not rs:
+        raise HTTPException(404, "Rule set not found")
+    cards = db.query(Card).filter(Card.id.in_(body.card_ids)).all()
+    if not cards:
+        raise HTTPException(400, "No cards found")
+
+    est_input = len(cards) * 200
+    est_output = len(cards) * (150 if job_type == "vignettes" else 300)
+    est_cost = compute_cost(body.model, est_input, est_output)
+
+    job = GenerationJob(
+        document_id=None,
+        job_type=job_type,
+        scope="selected",
+        chunk_ids=[c.id for c in cards],
+        rule_set_id=body.rule_set_id,
+        model=body.model,
+        status=JobStatus.pending,
+        total_chunks=len(cards),
+        processed_chunks=0,
+        total_cards=0,
+        estimated_cost_usd=est_cost,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    bg.add_task(
+        _run_supplemental,
+        job.id,
+        [c.id for c in cards],
+        rs.content,
+        body.model,
+        job_type,
+        body.replace_existing,
+    )
+    return {"job_id": job.id, "total_cards": len(cards), "estimated_cost_usd": est_cost}
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.get(GenerationJob, job_id)
@@ -123,6 +216,7 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404)
     return {
         "id": job.id,
+        "job_type": job.job_type,
         "document_id": job.document_id,
         "status": job.status,
         "total_chunks": job.total_chunks,
@@ -259,6 +353,105 @@ def _run_generation(
         job.total_cards = total_cards
         job.actual_input_tokens = total_input_tokens
         job.actual_output_tokens = total_output_tokens
+        job.finished_at = utcnow()
+        db.commit()
+
+    except anthropic.AuthenticationError:
+        _fail_job(db, job_id, "Anthropic API key is invalid or missing. Check your ANTHROPIC_API_KEY.")
+    except anthropic.PermissionDeniedError as e:
+        msg = str(e).lower()
+        if "credit" in msg or "billing" in msg or "balance" in msg or "quota" in msg:
+            _fail_job(db, job_id, "Your Anthropic account is out of credits. Please top up your balance and try again.")
+        else:
+            _fail_job(db, job_id, f"Anthropic permission error: {e}")
+    except anthropic.RateLimitError:
+        _fail_job(db, job_id, "Anthropic rate limit reached. Please wait a moment and try again.")
+    except anthropic.APIStatusError as e:
+        msg = str(e).lower()
+        if "credit" in msg or "billing" in msg or "balance" in msg:
+            _fail_job(db, job_id, "Your Anthropic account is out of credits. Please top up your balance and try again.")
+        else:
+            _fail_job(db, job_id, f"Anthropic API error ({e.status_code}): {e.message}")
+    except Exception as e:
+        _fail_job(db, job_id, str(e))
+    finally:
+        db.close()
+
+
+def _run_supplemental(
+    job_id: int,
+    card_ids: list[int],
+    rules_text: str,
+    model: str,
+    job_type: str,
+    replace_existing: bool,
+):
+    """Background task for vignette/teaching case generation."""
+    from backend.services.supplemental_generator import generate_supplemental_for_card
+
+    db = SessionLocal()
+    field_type = "vignette" if job_type == "vignettes" else "teaching_case"
+    try:
+        job = db.get(GenerationJob, job_id)
+        job.status = JobStatus.running
+        job.started_at = utcnow()
+        db.commit()
+
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        cards = db.query(Card).filter(Card.id.in_(card_ids)).all()
+
+        # Pre-load card data so threads don't share the db session
+        card_dicts = []
+        for c in cards:
+            existing_val = getattr(c, field_type)
+            if existing_val and not replace_existing:
+                continue
+            chunk = db.get(Chunk, c.chunk_id)
+            card_dicts.append({
+                "id": c.id,
+                "front_text": c.front_text,
+                "tags": c.tags or [],
+                "topic_path": chunk.topic_path if chunk else "",
+            })
+
+        total_input = 0
+        total_output = 0
+        processed = 0
+
+        with ThreadPoolExecutor(max_workers=14) as executor:
+            futures = {
+                executor.submit(generate_supplemental_for_card, client, cd, rules_text, model, field_type): cd
+                for cd in card_dicts
+            }
+            for future in as_completed(futures):
+                cd = futures[future]
+                try:
+                    text, usage = future.result()
+                    card = db.get(Card, cd["id"])
+                    setattr(card, field_type, text)
+                    total_input += usage.get("input_tokens", 0)
+                    total_output += usage.get("output_tokens", 0)
+                except Exception:
+                    logger.exception("Error generating %s for card %d", field_type, cd["id"])
+                finally:
+                    processed += 1
+                    job.processed_chunks = processed
+                    db.commit()
+
+        cost = compute_cost(model, total_input, total_output)
+        db.add(AIUsageLog(
+            operation=f"{field_type}_generation",
+            model=model,
+            input_tokens=total_input,
+            output_tokens=total_output,
+            cost_usd=cost,
+            job_id=job_id,
+        ))
+
+        job.status = JobStatus.done
+        job.actual_input_tokens = total_input
+        job.actual_output_tokens = total_output
+        job.total_cards = processed
         job.finished_at = utcnow()
         db.commit()
 
