@@ -470,7 +470,7 @@ function TopicConfirmScreen({
                     Generate now
                   </button>
                   <button
-                    onClick={onConfirmed}
+                    onClick={() => onConfirmed(uploadResult.id, 0)}
                     className="px-4 py-2.5 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors duration-150"
                   >
                     Later
