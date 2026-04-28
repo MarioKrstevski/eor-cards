@@ -1024,8 +1024,10 @@ export default function CardsPanel({
     () => [
       columnHelper.display({
         id: 'select',
-        size: 66,
-        minSize: 66,
+        size: 64,
+        minSize: 64,
+        maxSize: 64,
+        enableResizing: false,
         enableHiding: false,
         header: (ctx) => {
           const pageRows = ctx.table.getRowModel().rows;
