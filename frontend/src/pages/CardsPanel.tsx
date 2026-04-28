@@ -20,8 +20,12 @@ import {
   regenerateCard,
   exportCardsUrl,
   bulkMarkReviewed,
+  estimateVignettes,
+  startVignettes,
+  estimateTeachingCases,
+  startTeachingCases,
 } from '../api';
-import type { Card, CostEstimate, CardStatus } from '../types';
+import type { Card, CostEstimate, CardStatus, SupplementalEstimate } from '../types';
 import ConfirmModal from '../components/ConfirmModal';
 import AlertModal from '../components/AlertModal';
 import AnkifyModal from '../components/AnkifyModal';
@@ -552,7 +556,7 @@ export default function CardsPanel({
   onReviewChange,
   onGoToChunk,
 }: CardsPanelProps) {
-  const { selectedModel, selectedRuleSetId } = useSettings();
+  const { selectedModel, selectedRuleSetId, vignetteModel, vignetteRuleSetId, teachingCaseModel, teachingCaseRuleSetId } = useSettings();
 
   // ── Generation controls state ──────────────────────────────────────────────
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
@@ -610,6 +614,16 @@ export default function CardsPanel({
 
   // ── Generate confirm modal ─────────────────────────────────────────────────
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+
+  // ── Supplemental generation (vignettes / teaching cases) ──────────────────
+  const [supplementalJobId, setSupplementalJobId] = useState<number | null>(null);
+  const [supplementalPending, setSupplementalPending] = useState<{
+    type: 'vignette' | 'teaching_case';
+    replaceExisting: boolean;
+    cardIds: number[];
+    estimate: SupplementalEstimate | null;
+  } | null>(null);
+  const [supplementalEstimating, setSupplementalEstimating] = useState(false);
 
   // ── Anki/plain toggle ─────────────────────────────────────────────────────
   const [showAnkiFormat, setShowAnkiFormat] = useState(false);
@@ -911,6 +925,77 @@ export default function CardsPanel({
       onReviewChange?.();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to mark as reviewed'); }
   }, [unreviewedSelectedIds, onReviewChange]);
+
+  // ── Supplemental job polling ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!supplementalJobId) return;
+    const interval = setInterval(async () => {
+      try {
+        const job = await getGenerationJob(supplementalJobId);
+        if (job.status === 'done' || job.status === 'failed') {
+          clearInterval(interval);
+          setSupplementalJobId(null);
+          if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
+          else if (topicPath) fetchCards(null, topicPath);
+          refreshUsage?.();
+          if (job.status === 'failed') {
+            setJobAlertError(job.error_message ?? 'Supplemental generation failed');
+          }
+        }
+      } catch { /* keep polling */ }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [supplementalJobId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Supplemental generation handlers ─────────────────────────────────────
+  async function handleSupplementalClick(
+    type: 'vignette' | 'teaching_case',
+    replaceExisting: boolean,
+    cardIds: number[]
+  ) {
+    if (cardIds.length === 0) return;
+    const model = type === 'vignette' ? vignetteModel : teachingCaseModel;
+    setSupplementalEstimating(true);
+    try {
+      const est = type === 'vignette'
+        ? await estimateVignettes({ card_ids: cardIds, model })
+        : await estimateTeachingCases({ card_ids: cardIds, model });
+      setSupplementalPending({ type, replaceExisting, cardIds, estimate: est });
+    } catch {
+      setSupplementalPending({ type, replaceExisting, cardIds, estimate: null });
+    } finally {
+      setSupplementalEstimating(false);
+    }
+  }
+
+  async function handleSupplementalConfirm() {
+    if (!supplementalPending) return;
+    const { type, replaceExisting, cardIds } = supplementalPending;
+    setSupplementalPending(null);
+
+    // Resolve rule set id — use settings value, fall back to default for the type
+    let ruleId = type === 'vignette' ? vignetteRuleSetId : teachingCaseRuleSetId;
+    if (ruleId == null) {
+      try {
+        const rules = await getRuleSets(type === 'vignette' ? 'vignette' : 'teaching_case');
+        ruleId = rules.find(r => r.is_default)?.id ?? rules[0]?.id ?? null;
+      } catch { /* leave null */ }
+    }
+    if (ruleId == null) {
+      setActionError('No rule set configured for this type. Please set one in Settings.');
+      return;
+    }
+
+    const model = type === 'vignette' ? vignetteModel : teachingCaseModel;
+    try {
+      const resp = type === 'vignette'
+        ? await startVignettes({ card_ids: cardIds, rule_set_id: ruleId, model, replace_existing: replaceExisting })
+        : await startTeachingCases({ card_ids: cardIds, rule_set_id: ruleId, model, replace_existing: replaceExisting });
+      setSupplementalJobId(resp.job_id);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to start generation');
+    }
+  }
 
   // ── Filtered cards ─────────────────────────────────────────────────────────
   const filteredCards = useMemo(
@@ -1407,6 +1492,58 @@ export default function CardsPanel({
                 Mark {unreviewedSelectedIds.length} reviewed
               </button>
             )}
+
+            {/* ── Vignette / Teaching Case generation buttons ── */}
+            {(() => {
+              const selCards = cards.filter(c => selectedIds.has(c.id));
+              const noVignette = selCards.filter(c => !c.vignette);
+              const hasVignette = selCards.filter(c => c.vignette);
+              const noTC = selCards.filter(c => !c.teaching_case);
+              const hasTC = selCards.filter(c => c.teaching_case);
+              return (
+                <>
+                  {noVignette.length > 0 && (
+                    <button
+                      disabled={supplementalEstimating || !!supplementalJobId}
+                      onClick={() => handleSupplementalClick('vignette', false, noVignette.map(c => c.id))}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+                    >
+                      Generate Vignettes ({noVignette.length})
+                    </button>
+                  )}
+                  {hasVignette.length > 0 && (
+                    <button
+                      disabled={supplementalEstimating || !!supplementalJobId}
+                      onClick={() => handleSupplementalClick('vignette', true, hasVignette.map(c => c.id))}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+                    >
+                      Regenerate Vignettes ({hasVignette.length})
+                    </button>
+                  )}
+                  {noTC.length > 0 && (
+                    <button
+                      disabled={supplementalEstimating || !!supplementalJobId}
+                      onClick={() => handleSupplementalClick('teaching_case', false, noTC.map(c => c.id))}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+                    >
+                      Generate Teaching Cases ({noTC.length})
+                    </button>
+                  )}
+                  {hasTC.length > 0 && (
+                    <button
+                      disabled={supplementalEstimating || !!supplementalJobId}
+                      onClick={() => handleSupplementalClick('teaching_case', true, hasTC.map(c => c.id))}
+                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+                    >
+                      Regenerate Teaching Cases ({hasTC.length})
+                    </button>
+                  )}
+                  {supplementalJobId && (
+                    <span className="text-xs text-gray-500 font-medium animate-pulse">Generating...</span>
+                  )}
+                </>
+              );
+            })()}
           </div>
 
           {/* Export */}
@@ -1568,6 +1705,25 @@ export default function CardsPanel({
       </main>
 
       {jobAlertError && <AlertModal title="Generation failed" message={jobAlertError} onClose={() => setJobAlertError(null)} />}
+
+      {supplementalPending && (
+        <ConfirmModal
+          title={
+            supplementalPending.type === 'vignette'
+              ? (supplementalPending.replaceExisting ? 'Regenerate Vignettes?' : 'Generate Vignettes?')
+              : (supplementalPending.replaceExisting ? 'Regenerate Teaching Cases?' : 'Generate Teaching Cases?')
+          }
+          message={
+            supplementalPending.estimate
+              ? `${supplementalPending.replaceExisting ? 'Regenerate' : 'Generate'} ${supplementalPending.type === 'vignette' ? 'vignettes' : 'teaching cases'} for ${supplementalPending.estimate.card_count} card${supplementalPending.estimate.card_count !== 1 ? 's' : ''}?\n\nEstimated cost: ~$${supplementalPending.estimate.estimated_cost_usd.toFixed(3)} (${supplementalPending.estimate.estimated_input_tokens.toLocaleString()} in / ${supplementalPending.estimate.estimated_output_tokens.toLocaleString()} out tokens).`
+              : `${supplementalPending.replaceExisting ? 'Regenerate' : 'Generate'} ${supplementalPending.type === 'vignette' ? 'vignettes' : 'teaching cases'} for ${supplementalPending.cardIds.length} card${supplementalPending.cardIds.length !== 1 ? 's' : ''}?`
+          }
+          confirmLabel={supplementalPending.replaceExisting ? 'Regenerate' : 'Generate'}
+          variant="primary"
+          onConfirm={handleSupplementalConfirm}
+          onCancel={() => setSupplementalPending(null)}
+        />
+      )}
 
       {showGenerateConfirm && (
         <ConfirmModal
