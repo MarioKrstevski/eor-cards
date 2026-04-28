@@ -1024,8 +1024,8 @@ export default function CardsPanel({
     () => [
       columnHelper.display({
         id: 'select',
-        size: 64,
-        minSize: 64,
+        size: 66,
+        minSize: 66,
         enableHiding: false,
         header: (ctx) => {
           const pageRows = ctx.table.getRowModel().rows;
@@ -1057,7 +1057,7 @@ export default function CardsPanel({
                 onChange={() => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
                 className="w-4 h-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500"
               />
-              <div className="grid grid-cols-2 gap-0.5">
+              <div className="grid grid-cols-2 gap-0.5 mt-9">
                 <button
                   onClick={() => {
                     const div = tableContainerRef.current?.querySelector(
