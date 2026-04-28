@@ -34,22 +34,28 @@ def export_cards(
 
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=[
-        "id", "front_text", "front_html", "tags", "extra",
+        "note_id", "id", "front_text", "front_html", "tags", "extra",
+        "vignette", "teaching_case", "ref_img", "ref_img_position",
         "status", "needs_review", "chunk_heading", "document_name", "topic_path",
     ])
     writer.writeheader()
     for card in cards:
         writer.writerow({
+            "note_id": card.note_id or "",
             "id": card.id,
             "front_text": card.front_text,
             "front_html": card.front_html,
             "tags": ",".join(card.tags or []),
             "extra": card.extra or "",
+            "vignette": card.vignette or "",
+            "teaching_case": card.teaching_case or "",
+            "ref_img": card.ref_img or "",
+            "ref_img_position": card.ref_img_position or "",
             "status": card.status,
             "needs_review": card.needs_review,
             "chunk_heading": card.chunk.heading if card.chunk else "",
             "document_name": card.document.original_name if card.document else "",
-            "topic_path": card.document.topic_path if card.document else "",
+            "topic_path": card.chunk.topic_path if card.chunk else "",
         })
     output.seek(0)
     return StreamingResponse(
