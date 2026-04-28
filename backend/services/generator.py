@@ -7,7 +7,10 @@ that tells the student what topic/condition/concept they are being tested on. \
 Determine the anchor from the topic path, section heading, and content context. \
 The anchor is usually the disease, condition, or concept name. \
 NEVER cloze the anchor — it must remain readable so the student knows what \
-they are studying and can recall the associated facts."""
+they are studying and can recall the associated facts.
+
+FORMATTING RULE: Output plain text only. Do NOT use markdown formatting (no **, no *, no #, no backticks). \
+If you need emphasis, use HTML tags like <b> or <span> with inline styles. The output format is: number|card text"""
 
 
 def strip_card_html(card_text: str) -> str:

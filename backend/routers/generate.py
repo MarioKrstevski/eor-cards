@@ -189,8 +189,9 @@ def _start_supplemental(body: SupplementalStartRequest, job_type: str, bg: Backg
         est_output = len(cards) * (150 if job_type == "vignettes" else 300)
         est_cost = compute_cost(body.model, est_input, est_output)
 
+        # Use first card's document_id (SQLite existing DB has NOT NULL on this column)
         job = GenerationJob(
-            document_id=None,
+            document_id=cards[0].document_id,
             job_type=job_type,
             scope="selected",
             chunk_ids=[c.id for c in cards],
