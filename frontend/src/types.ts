@@ -25,6 +25,7 @@ export interface RuleSet {
   name: string;
   content: string;
   is_default: boolean;
+  rule_type: 'generation' | 'vignette' | 'teaching_case';
   created_at: string;
 }
 
@@ -105,6 +106,9 @@ export interface Card {
   topic_path: string | null;
   chunk_heading: string | null;
   chunk_source_html: string | null;
+  ref_img: string | null;
+  ref_img_position: 'front' | 'back';
+  note_id: number;
 }
 
 // ─── Generation ───────────────────────────────────────────────────────────────
@@ -142,9 +146,24 @@ export interface GenerationJob {
   estimated_cost_usd: number | null;
   actual_input_tokens: number | null;
   actual_output_tokens: number | null;
+  job_type: 'cards' | 'vignettes' | 'teaching_cases';
   error_message: string | null;
   started_at: string | null;
   finished_at: string | null;
+}
+
+export interface SupplementalEstimate {
+  card_count: number;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_cost_usd: number;
+  model: string;
+}
+
+export interface SupplementalStartResponse {
+  job_id: number;
+  total_cards: number;
+  estimated_cost_usd: number;
 }
 
 export interface AIUsageSummary {

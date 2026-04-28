@@ -13,6 +13,8 @@ import type {
   StartGenerationResponse,
   GenerationJob,
   AIUsageSummary,
+  SupplementalEstimate,
+  SupplementalStartResponse,
 } from './types';
 
 const http = axios.create({ baseURL: '/api' });
@@ -65,8 +67,9 @@ export async function confirmReassignTopics(
 
 // ─── Rule Sets ────────────────────────────────────────────────────────────────
 
-export async function getRuleSets(): Promise<RuleSet[]> {
-  const res = await http.get<RuleSet[]>('/rules');
+export async function getRuleSets(ruleType?: string): Promise<RuleSet[]> {
+  const params = ruleType ? { rule_type: ruleType } : undefined;
+  const res = await http.get<RuleSet[]>('/rules', { params });
   return res.data;
 }
 
@@ -74,6 +77,7 @@ export async function createRuleSet(params: {
   name: string;
   content: string;
   is_default?: boolean;
+  rule_type?: string;
 }): Promise<RuleSet> {
   const res = await http.post<RuleSet>('/rules', params);
   return res.data;
@@ -161,6 +165,7 @@ export async function updateCard(
     teaching_case?: string | null;
     status?: CardStatus;
     is_reviewed?: boolean;
+    ref_img_position?: 'front' | 'back';
   }
 ): Promise<Card> {
   const res = await http.patch<Card>(`/cards/${id}`, params);
@@ -219,6 +224,38 @@ export async function startGeneration(params: {
 
 export async function getGenerationJob(jobId: number): Promise<GenerationJob> {
   const res = await http.get<GenerationJob>(`/generate/jobs/${jobId}`);
+  return res.data;
+}
+
+// ─── Supplemental Generation (Vignettes / Teaching Cases) ────────────────────
+
+export async function estimateVignettes(params: { card_ids: number[]; model: string }): Promise<SupplementalEstimate> {
+  const res = await http.post<SupplementalEstimate>('/generate/vignettes/estimate', params);
+  return res.data;
+}
+
+export async function startVignettes(params: {
+  card_ids: number[];
+  rule_set_id: number;
+  model: string;
+  replace_existing?: boolean;
+}): Promise<SupplementalStartResponse> {
+  const res = await http.post<SupplementalStartResponse>('/generate/vignettes/start', params);
+  return res.data;
+}
+
+export async function estimateTeachingCases(params: { card_ids: number[]; model: string }): Promise<SupplementalEstimate> {
+  const res = await http.post<SupplementalEstimate>('/generate/teaching-cases/estimate', params);
+  return res.data;
+}
+
+export async function startTeachingCases(params: {
+  card_ids: number[];
+  rule_set_id: number;
+  model: string;
+  replace_existing?: boolean;
+}): Promise<SupplementalStartResponse> {
+  const res = await http.post<SupplementalStartResponse>('/generate/teaching-cases/start', params);
   return res.data;
 }
 
