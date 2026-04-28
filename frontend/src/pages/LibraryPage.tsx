@@ -565,6 +565,12 @@ export default function LibraryPage() {
   const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
   const [creatingRuleSet, setCreatingRuleSet] = useState(false);
   const [ruleSetError, setRuleSetError] = useState<string | null>(null);
+  const [ruleSubTab, setRuleSubTab] = useState<'generation' | 'vignette' | 'teaching_case'>('generation');
+  const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   // Coverage tab
   const [directCounts, setDirectCounts] = useState<Record<string, TopicCoverageStats>>({});
@@ -911,50 +917,204 @@ export default function LibraryPage() {
         {/* ── RULES TAB ── */}
         {activeTab === 'rules' && (
           <div className="flex h-full">
-            <aside className="bg-white w-full max-w-md flex flex-col overflow-hidden shadow-[1px_0_3px_0_rgba(0,0,0,0.04)]">
-              <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between shrink-0">
-                <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
-                  Rule Sets
-                </h2>
-                <button
-                  onClick={() => setCreatingRuleSet((v) => !v)}
-                  className="text-xs text-blue-700 hover:text-blue-900 font-medium transition-colors duration-150"
-                >
-                  + New
-                </button>
+            {/* Sidebar */}
+            <aside className="bg-white w-72 flex flex-col overflow-hidden shrink-0 shadow-[1px_0_3px_0_rgba(0,0,0,0.04)]">
+              {/* Header */}
+              <div className="px-4 py-3.5 border-b border-gray-200 shrink-0">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                    Rule Sets
+                  </h2>
+                  <button
+                    onClick={() => setCreatingRuleSet((v) => !v)}
+                    className="text-xs text-blue-700 hover:text-blue-900 font-medium transition-colors duration-150"
+                  >
+                    + New
+                  </button>
+                </div>
+                {/* Sub-tabs */}
+                <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                  {(['generation', 'vignette', 'teaching_case'] as const).map((type) => {
+                    const labels: Record<typeof type, string> = {
+                      generation: 'Generation',
+                      vignette: 'Vignette',
+                      teaching_case: 'Teaching',
+                    };
+                    return (
+                      <button
+                        key={type}
+                        onClick={() => {
+                          setRuleSubTab(type);
+                          setSelectedRuleId(null);
+                          setEditName('');
+                          setEditContent('');
+                          setEditError(null);
+                        }}
+                        className={[
+                          'flex-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors duration-150',
+                          ruleSubTab === type
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700',
+                        ].join(' ')}
+                      >
+                        {labels[type]}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="overflow-y-auto flex-1 px-4 py-4">
+
+              {/* Rule list */}
+              <div className="overflow-y-auto flex-1 py-2">
                 {ruleSetError && (
-                  <p className="text-red-500 text-xs mb-1">{ruleSetError}</p>
+                  <p className="text-red-500 text-xs px-4 mb-1">{ruleSetError}</p>
                 )}
-                {creatingRuleSet && (
-                  <RuleSetModal
-                    title="New Rule Set"
-                    onSave={async (name, content, isDefault) => {
-                      await createRuleSet({ name, content, is_default: isDefault });
-                      fetchRuleSets();
-                    }}
-                    onClose={() => setCreatingRuleSet(false)}
-                  />
-                )}
-                {ruleSets.length === 0 && !creatingRuleSet && (
-                  <p className="text-xs text-gray-400 italic py-1">No rule sets yet</p>
-                )}
-                {ruleSets.map((rs) => (
-                  <RuleSetItem
-                    key={rs.id}
-                    rs={rs}
-                    onRefresh={fetchRuleSets}
-                    onDeleteRequest={(id, name) =>
-                      setConfirmDelete({ type: 'ruleset', id, name })
-                    }
-                  />
-                ))}
+                {(() => {
+                  const filteredRules = ruleSets.filter((r) => r.rule_type === ruleSubTab);
+                  if (filteredRules.length === 0) {
+                    return (
+                      <p className="text-xs text-gray-400 italic px-4 py-2">No rule sets yet</p>
+                    );
+                  }
+                  return filteredRules.map((rs) => {
+                    const isActive = rs.id === selectedRuleId;
+                    return (
+                      <div
+                        key={rs.id}
+                        onClick={() => {
+                          setSelectedRuleId(rs.id);
+                          setEditName(rs.name);
+                          setEditContent(rs.content);
+                          setEditError(null);
+                        }}
+                        className={[
+                          'group flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors duration-150',
+                          isActive ? 'bg-blue-50' : 'hover:bg-gray-50',
+                        ].join(' ')}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-medium truncate ${isActive ? 'text-blue-700' : 'text-gray-800'}`}>
+                            {rs.name}
+                          </p>
+                          {rs.is_default && (
+                            <span className="inline-flex items-center px-1.5 py-0 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 mt-0.5">
+                              default
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDelete({ type: 'ruleset', id: rs.id, name: rs.name });
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 rounded transition-all duration-150 shrink-0"
+                          title="Delete"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </aside>
-            <main className="flex-1 bg-gray-50/50 flex items-center justify-center">
-              <p className="text-sm text-gray-500 font-medium">Select a rule set to edit it.</p>
+
+            {/* Right panel — inline editor */}
+            <main className="flex-1 bg-gray-50/50 flex flex-col overflow-hidden">
+              {selectedRuleId == null ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    </div>
+                    <p className="text-sm text-gray-500 font-medium">Select a rule set to edit it.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col h-full p-6 gap-4">
+                  {/* Name */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                      Name
+                    </label>
+                    <input
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors bg-white"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Rule set name"
+                    />
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex flex-col flex-1 min-h-0">
+                    <label className="block text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                      Content
+                    </label>
+                    <textarea
+                      className="flex-1 w-full border border-gray-200 rounded-lg px-3 py-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors resize-none bg-white"
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      placeholder="Rule set content..."
+                    />
+                  </div>
+
+                  {/* Error */}
+                  {editError && <p className="text-red-500 text-xs">{editError}</p>}
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2.5 shrink-0">
+                    <button
+                      onClick={async () => {
+                        if (!editName.trim()) { setEditError('Name is required'); return; }
+                        setEditSaving(true);
+                        setEditError(null);
+                        try {
+                          await updateRuleSet(selectedRuleId, { name: editName.trim(), content: editContent });
+                          await fetchRuleSets();
+                        } catch {
+                          setEditError('Save failed');
+                        } finally {
+                          setEditSaving(false);
+                        }
+                      }}
+                      disabled={editSaving}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors disabled:opacity-60"
+                    >
+                      {editSaving ? 'Saving...' : 'Save'}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await setDefaultRuleSet(selectedRuleId);
+                          await fetchRuleSets();
+                        } catch {
+                          setEditError('Set default failed');
+                        }
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Set as Default
+                    </button>
+                  </div>
+                </div>
+              )}
             </main>
+
+            {/* Create modal (kept for new rule creation) */}
+            {creatingRuleSet && (
+              <RuleSetModal
+                title="New Rule Set"
+                onSave={async (name, content, isDefault) => {
+                  await createRuleSet({ name, content, is_default: isDefault, rule_type: ruleSubTab });
+                  await fetchRuleSets();
+                }}
+                onClose={() => setCreatingRuleSet(false)}
+              />
+            )}
           </div>
         )}
 
