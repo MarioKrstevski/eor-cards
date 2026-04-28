@@ -130,32 +130,40 @@ def start_generation(
 
 @router.post("/vignettes/estimate")
 def estimate_vignettes(body: SupplementalEstimateRequest, db: Session = Depends(get_db)):
-    count = db.query(Card).filter(Card.id.in_(body.card_ids)).count()
-    est_input = count * 200
-    est_output = count * 150
-    cost = compute_cost(body.model, est_input, est_output)
-    return {
-        "card_count": count,
-        "estimated_input_tokens": est_input,
-        "estimated_output_tokens": est_output,
-        "estimated_cost_usd": cost,
-        "model": body.model,
-    }
+    try:
+        count = db.query(Card).filter(Card.id.in_(body.card_ids)).count()
+        est_input = count * 200
+        est_output = count * 150
+        cost = compute_cost(body.model, est_input, est_output)
+        return {
+            "card_count": count,
+            "estimated_input_tokens": est_input,
+            "estimated_output_tokens": est_output,
+            "estimated_cost_usd": cost,
+            "model": body.model,
+        }
+    except Exception as e:
+        logger.exception("estimate_vignettes failed")
+        raise HTTPException(500, f"Estimate failed: {e}")
 
 
 @router.post("/teaching-cases/estimate")
 def estimate_teaching_cases(body: SupplementalEstimateRequest, db: Session = Depends(get_db)):
-    count = db.query(Card).filter(Card.id.in_(body.card_ids)).count()
-    est_input = count * 200
-    est_output = count * 300
-    cost = compute_cost(body.model, est_input, est_output)
-    return {
-        "card_count": count,
-        "estimated_input_tokens": est_input,
-        "estimated_output_tokens": est_output,
-        "estimated_cost_usd": cost,
-        "model": body.model,
-    }
+    try:
+        count = db.query(Card).filter(Card.id.in_(body.card_ids)).count()
+        est_input = count * 200
+        est_output = count * 300
+        cost = compute_cost(body.model, est_input, est_output)
+        return {
+            "card_count": count,
+            "estimated_input_tokens": est_input,
+            "estimated_output_tokens": est_output,
+            "estimated_cost_usd": cost,
+            "model": body.model,
+        }
+    except Exception as e:
+        logger.exception("estimate_teaching_cases failed")
+        raise HTTPException(500, f"Estimate failed: {e}")
 
 
 @router.post("/vignettes/start")
@@ -169,44 +177,50 @@ def start_teaching_cases(body: SupplementalStartRequest, bg: BackgroundTasks, db
 
 
 def _start_supplemental(body: SupplementalStartRequest, job_type: str, bg: BackgroundTasks, db: Session):
-    rs = db.get(RuleSet, body.rule_set_id)
-    if not rs:
-        raise HTTPException(404, "Rule set not found")
-    cards = db.query(Card).filter(Card.id.in_(body.card_ids)).all()
-    if not cards:
-        raise HTTPException(400, "No cards found")
+    try:
+        rs = db.get(RuleSet, body.rule_set_id)
+        if not rs:
+            raise HTTPException(404, "Rule set not found")
+        cards = db.query(Card).filter(Card.id.in_(body.card_ids)).all()
+        if not cards:
+            raise HTTPException(400, "No cards found")
 
-    est_input = len(cards) * 200
-    est_output = len(cards) * (150 if job_type == "vignettes" else 300)
-    est_cost = compute_cost(body.model, est_input, est_output)
+        est_input = len(cards) * 200
+        est_output = len(cards) * (150 if job_type == "vignettes" else 300)
+        est_cost = compute_cost(body.model, est_input, est_output)
 
-    job = GenerationJob(
-        document_id=None,
-        job_type=job_type,
-        scope="selected",
-        chunk_ids=[c.id for c in cards],
-        rule_set_id=body.rule_set_id,
-        model=body.model,
-        status=JobStatus.pending,
-        total_chunks=len(cards),
-        processed_chunks=0,
-        total_cards=0,
-        estimated_cost_usd=est_cost,
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(job)
+        job = GenerationJob(
+            document_id=None,
+            job_type=job_type,
+            scope="selected",
+            chunk_ids=[c.id for c in cards],
+            rule_set_id=body.rule_set_id,
+            model=body.model,
+            status=JobStatus.pending,
+            total_chunks=len(cards),
+            processed_chunks=0,
+            total_cards=0,
+            estimated_cost_usd=est_cost,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
 
-    bg.add_task(
-        _run_supplemental,
-        job.id,
-        [c.id for c in cards],
-        rs.content,
-        body.model,
-        job_type,
-        body.replace_existing,
-    )
-    return {"job_id": job.id, "total_cards": len(cards), "estimated_cost_usd": est_cost}
+        bg.add_task(
+            _run_supplemental,
+            job.id,
+            [c.id for c in cards],
+            rs.content,
+            body.model,
+            job_type,
+            body.replace_existing,
+        )
+        return {"job_id": job.id, "total_cards": len(cards), "estimated_cost_usd": est_cost}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("_start_supplemental failed for %s", job_type)
+        raise HTTPException(500, f"Start {job_type} failed: {e}")
 
 
 @router.get("/jobs/{job_id}")

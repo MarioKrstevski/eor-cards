@@ -128,6 +128,7 @@ async def upload_document(file: UploadFile = File(...), chunking_model: str = "c
             content_type=c["content_type"],
             source_text=c["source_text"],
             source_html=c["source_html"],
+            ref_img=c.get("ref_img"),
             rule_subset=c.get("rule_subset", []),
         )
         db.add(chunk)
@@ -241,6 +242,7 @@ async def paste_document(body: PasteDocumentRequest, db: Session = Depends(get_d
                 content_type=c["content_type"],
                 source_text=c["source_text"],
                 source_html=c["source_html"],
+                ref_img=c.get("ref_img"),
                 rule_subset=c.get("rule_subset", []),
             )
             db.add(chunk)
