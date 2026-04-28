@@ -1,4 +1,5 @@
 import os
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -25,18 +26,62 @@ def _run_migrations():
             conn.execute(text("ALTER TABLE cards ADD COLUMN teaching_case TEXT"))
             conn.commit()
 
+        # v4 columns
+        _add_col_if_missing(conn, insp, "rule_sets", "rule_type", "VARCHAR(20) DEFAULT 'generation'")
+        _add_col_if_missing(conn, insp, "chunks", "ref_img", "TEXT")
+        _add_col_if_missing(conn, insp, "cards", "ref_img", "TEXT")
+        _add_col_if_missing(conn, insp, "cards", "ref_img_position", "VARCHAR(10) DEFAULT 'front'")
+        _add_col_if_missing(conn, insp, "cards", "note_id", "BIGINT")
+        _add_col_if_missing(conn, insp, "generation_jobs", "job_type", "VARCHAR(20) DEFAULT 'cards'")
+
+        # Backfill note_id for existing cards
+        cursor = conn.execute(text("SELECT id FROM cards WHERE note_id IS NULL ORDER BY created_at, id"))
+        rows = cursor.fetchall()
+        if rows:
+            base_ts = int(time.time() * 1000) - len(rows)
+            for i, row in enumerate(rows):
+                conn.execute(text("UPDATE cards SET note_id = :nid WHERE id = :cid"), {"nid": base_ts + i, "cid": row[0]})
+            conn.commit()
+
+
+def _add_col_if_missing(conn, insp, table, column, col_def):
+    from sqlalchemy import text
+    cols = [c['name'] for c in insp.get_columns(table)]
+    if column not in cols:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))
+        conn.commit()
+
 
 def seed_data():
     from sqlalchemy.orm import Session
     from backend.config import DATA_DIR
+    from backend.models import RuleSet
     with Session(engine) as db:
-        if db.query(models.RuleSet).count() == 0:
+        if db.query(RuleSet).filter_by(rule_type="generation").count() == 0:
             rules_path = os.path.join(DATA_DIR, "ai-rules.md")
             if os.path.exists(rules_path):
                 with open(rules_path) as f:
                     content = f.read()
-                db.add(models.RuleSet(name="Default (ai-rules v1.1)", content=content, is_default=True))
+                db.add(RuleSet(name="Default (ai-rules v1.1)", rule_type="generation", content=content, is_default=True))
                 db.commit()
+
+        if not db.query(RuleSet).filter_by(rule_type="vignette").first():
+            db.add(RuleSet(
+                name="Default Vignette Rules",
+                rule_type="vignette",
+                content="Generate a concise clinical vignette for the following flashcard. The vignette should be a brief mini-lesson (2-4 sentences) that reminds the student of the key concept being tested. Include relevant clinical context, pathophysiology, or diagnostic pearls. Write in a clear, educational tone.",
+                is_default=True,
+            ))
+
+        if not db.query(RuleSet).filter_by(rule_type="teaching_case").first():
+            db.add(RuleSet(
+                name="Default Teaching Case Rules",
+                rule_type="teaching_case",
+                content="Generate a realistic clinical teaching case for the following flashcard. Present a patient scenario (age, sex, chief complaint, relevant history, physical exam findings, and key lab/imaging results) that leads to the diagnosis or concept on the card. The case should test clinical reasoning — the student should be able to arrive at the answer through the clues provided. Keep it to one paragraph.",
+                is_default=True,
+            ))
+        db.commit()
+
         if db.query(models.Curriculum).count() == 0:
             import json
             curr_path = os.path.join(DATA_DIR, "curriculum.json")

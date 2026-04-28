@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, Text, Boolean, Integer, Float, JSON, ForeignKey, Enum
+from sqlalchemy import String, Text, Boolean, Integer, Float, JSON, ForeignKey, Enum, BigInteger, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.db import Base
 import enum
@@ -10,9 +10,11 @@ def utcnow():
 
 class RuleSet(Base):
     __tablename__ = "rule_sets"
+    __table_args__ = (UniqueConstraint("name", "rule_type", name="uq_ruleset_name_type"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(200), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(Text)
+    rule_type: Mapped[str] = mapped_column(String(20), default="generation")
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
@@ -35,7 +37,7 @@ class Document(Base):
     chunk_count: Mapped[int] = mapped_column(Integer, default=0)
     chunks: Mapped[list["Chunk"]] = relationship("Chunk", back_populates="document", cascade="all, delete-orphan")
     cards: Mapped[list["Card"]] = relationship("Card", back_populates="document", cascade="all, delete-orphan")
-    jobs: Mapped[list["GenerationJob"]] = relationship("GenerationJob", back_populates="document", cascade="all, delete-orphan")
+    jobs: Mapped[list["GenerationJob"]] = relationship("GenerationJob", back_populates="document", cascade="all")
 
 class Chunk(Base):
     __tablename__ = "chunks"
@@ -46,6 +48,7 @@ class Chunk(Base):
     content_type: Mapped[str] = mapped_column(String(50))
     source_text: Mapped[str] = mapped_column(Text)
     source_html: Mapped[str] = mapped_column(Text)
+    ref_img: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     rule_subset: Mapped[list] = mapped_column(JSON, default=list)
     card_count: Mapped[int] = mapped_column(Integer, default=0)
     topic_id: Mapped[Optional[int]] = mapped_column(ForeignKey("curriculum.id"), nullable=True)
@@ -70,6 +73,9 @@ class Card(Base):
     extra: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     vignette: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     teaching_case: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ref_img: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ref_img_position: Mapped[str] = mapped_column(String(10), default="front")
+    note_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=True)
     status: Mapped[CardStatus] = mapped_column(Enum(CardStatus), default=CardStatus.active)
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     is_reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -87,11 +93,12 @@ class JobStatus(str, enum.Enum):
 class GenerationJob(Base):
     __tablename__ = "generation_jobs"
     id: Mapped[int] = mapped_column(primary_key=True)
-    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id"))
+    document_id: Mapped[Optional[int]] = mapped_column(ForeignKey("documents.id"), nullable=True)
     scope: Mapped[str] = mapped_column(String(20))
     chunk_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     rule_set_id: Mapped[int] = mapped_column(ForeignKey("rule_sets.id"))
     model: Mapped[str] = mapped_column(String(100))
+    job_type: Mapped[str] = mapped_column(String(20), default="cards")
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.pending)
     total_chunks: Mapped[int] = mapped_column(Integer, default=0)
     processed_chunks: Mapped[int] = mapped_column(Integer, default=0)
