@@ -225,35 +225,20 @@ export async function getGenerationJob(jobId: number): Promise<GenerationJob> {
   return res.data;
 }
 
-// ─── Supplemental Generation (Vignettes / Teaching Cases) ────────────────────
+// ─── Supplemental Generation (Vignettes + Teaching Cases combined) ────────────
 
-export async function estimateVignettes(params: { card_ids: number[]; model: string }): Promise<SupplementalEstimate> {
-  const res = await http.post<SupplementalEstimate>('/generate/vignettes/estimate', params);
+export async function estimateSupplemental(params: { card_ids: number[]; model: string }): Promise<SupplementalEstimate> {
+  const res = await http.post<SupplementalEstimate>('/generate/supplemental/estimate', params);
   return res.data;
 }
 
-export async function startVignettes(params: {
+export async function startSupplemental(params: {
   card_ids: number[];
   rule_set_id: number;
   model: string;
   replace_existing?: boolean;
 }): Promise<SupplementalStartResponse> {
-  const res = await http.post<SupplementalStartResponse>('/generate/vignettes/start', params);
-  return res.data;
-}
-
-export async function estimateTeachingCases(params: { card_ids: number[]; model: string }): Promise<SupplementalEstimate> {
-  const res = await http.post<SupplementalEstimate>('/generate/teaching-cases/estimate', params);
-  return res.data;
-}
-
-export async function startTeachingCases(params: {
-  card_ids: number[];
-  rule_set_id: number;
-  model: string;
-  replace_existing?: boolean;
-}): Promise<SupplementalStartResponse> {
-  const res = await http.post<SupplementalStartResponse>('/generate/teaching-cases/start', params);
+  const res = await http.post<SupplementalStartResponse>('/generate/supplemental/start', params);
   return res.data;
 }
 

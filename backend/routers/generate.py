@@ -128,55 +128,37 @@ def start_generation(
     }
 
 
-@router.post("/vignettes/estimate")
-def estimate_vignettes(body: SupplementalEstimateRequest, db: Session = Depends(get_db)):
+@router.post("/supplemental/estimate")
+def estimate_supplemental(body: SupplementalEstimateRequest, db: Session = Depends(get_db)):
+    """Estimate cost for combined vignette + teaching case generation."""
     try:
-        count = db.query(Card).filter(Card.id.in_(body.card_ids)).count()
-        est_input = count * 200
-        est_output = count * 150
+        cards = db.query(Card).filter(Card.id.in_(body.card_ids)).all()
+        # Group by leaf topic to count condition groups
+        groups = {}
+        for c in cards:
+            leaf = (c.tags or [])[-1] if c.tags else "Unassigned"
+            groups.setdefault(leaf, []).append(c)
+        num_groups = len(groups)
+        # Estimate: ~500 input tokens per group (cards + rules), ~1500 output (vignette + teaching case)
+        est_input = num_groups * 500
+        est_output = num_groups * 1500
         cost = compute_cost(body.model, est_input, est_output)
         return {
-            "card_count": count,
+            "card_count": len(cards),
+            "condition_groups": num_groups,
             "estimated_input_tokens": est_input,
             "estimated_output_tokens": est_output,
             "estimated_cost_usd": cost,
             "model": body.model,
         }
     except Exception as e:
-        logger.exception("estimate_vignettes failed")
+        logger.exception("estimate_supplemental failed")
         raise HTTPException(500, f"Estimate failed: {e}")
 
 
-@router.post("/teaching-cases/estimate")
-def estimate_teaching_cases(body: SupplementalEstimateRequest, db: Session = Depends(get_db)):
-    try:
-        count = db.query(Card).filter(Card.id.in_(body.card_ids)).count()
-        est_input = count * 200
-        est_output = count * 300
-        cost = compute_cost(body.model, est_input, est_output)
-        return {
-            "card_count": count,
-            "estimated_input_tokens": est_input,
-            "estimated_output_tokens": est_output,
-            "estimated_cost_usd": cost,
-            "model": body.model,
-        }
-    except Exception as e:
-        logger.exception("estimate_teaching_cases failed")
-        raise HTTPException(500, f"Estimate failed: {e}")
-
-
-@router.post("/vignettes/start")
-def start_vignettes(body: SupplementalStartRequest, bg: BackgroundTasks, db: Session = Depends(get_db)):
-    return _start_supplemental(body, "vignettes", bg, db)
-
-
-@router.post("/teaching-cases/start")
-def start_teaching_cases(body: SupplementalStartRequest, bg: BackgroundTasks, db: Session = Depends(get_db)):
-    return _start_supplemental(body, "teaching_cases", bg, db)
-
-
-def _start_supplemental(body: SupplementalStartRequest, job_type: str, bg: BackgroundTasks, db: Session):
+@router.post("/supplemental/start")
+def start_supplemental(body: SupplementalStartRequest, bg: BackgroundTasks, db: Session = Depends(get_db)):
+    """Start combined vignette + teaching case generation, grouped by condition."""
     try:
         rs = db.get(RuleSet, body.rule_set_id)
         if not rs:
@@ -185,20 +167,25 @@ def _start_supplemental(body: SupplementalStartRequest, job_type: str, bg: Backg
         if not cards:
             raise HTTPException(400, "No cards found")
 
-        est_input = len(cards) * 200
-        est_output = len(cards) * (150 if job_type == "vignettes" else 300)
+        # Count condition groups for progress tracking
+        groups = {}
+        for c in cards:
+            leaf = (c.tags or [])[-1] if c.tags else "Unassigned"
+            groups.setdefault(leaf, []).append(c)
+
+        est_input = len(groups) * 500
+        est_output = len(groups) * 1500
         est_cost = compute_cost(body.model, est_input, est_output)
 
-        # Use first card's document_id (SQLite existing DB has NOT NULL on this column)
         job = GenerationJob(
             document_id=cards[0].document_id,
-            job_type=job_type,
+            job_type="supplemental",
             scope="selected",
             chunk_ids=[c.id for c in cards],
             rule_set_id=body.rule_set_id,
             model=body.model,
             status=JobStatus.pending,
-            total_chunks=len(cards),
+            total_chunks=len(groups),  # track condition groups, not cards
             processed_chunks=0,
             total_cards=0,
             estimated_cost_usd=est_cost,
@@ -213,15 +200,14 @@ def _start_supplemental(body: SupplementalStartRequest, job_type: str, bg: Backg
             [c.id for c in cards],
             rs.content,
             body.model,
-            job_type,
             body.replace_existing,
         )
-        return {"job_id": job.id, "total_cards": len(cards), "estimated_cost_usd": est_cost}
+        return {"job_id": job.id, "total_cards": len(cards), "condition_groups": len(groups), "estimated_cost_usd": est_cost}
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception("_start_supplemental failed for %s", job_type)
-        raise HTTPException(500, f"Start {job_type} failed: {e}")
+        logger.exception("start_supplemental failed")
+        raise HTTPException(500, f"Start supplemental failed: {e}")
 
 
 @router.get("/jobs/{job_id}")
@@ -398,14 +384,12 @@ def _run_supplemental(
     card_ids: list[int],
     rules_text: str,
     model: str,
-    job_type: str,
     replace_existing: bool,
 ):
-    """Background task for vignette/teaching case generation."""
-    from backend.services.supplemental_generator import generate_supplemental_for_card
+    """Background task: generate vignette + teaching case per condition group."""
+    from backend.services.supplemental_generator import generate_supplemental_for_group
 
     db = SessionLocal()
-    field_type = "vignette" if job_type == "vignettes" else "teaching_case"
     try:
         job = db.get(GenerationJob, job_id)
         job.status = JobStatus.running
@@ -415,47 +399,53 @@ def _run_supplemental(
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         cards = db.query(Card).filter(Card.id.in_(card_ids)).all()
 
-        # Pre-load card data so threads don't share the db session
-        card_dicts = []
+        # Group cards by leaf topic (condition)
+        condition_groups = {}
         for c in cards:
-            existing_val = getattr(c, field_type)
-            if existing_val and not replace_existing:
+            if not replace_existing and c.vignette and c.teaching_case:
                 continue
-            chunk = db.get(Chunk, c.chunk_id)
-            card_dicts.append({
+            leaf = (c.tags or [])[-1] if c.tags else "Unassigned"
+            condition_groups.setdefault(leaf, []).append({
                 "id": c.id,
+                "card_number": c.card_number,
                 "front_text": c.front_text,
-                "tags": c.tags or [],
-                "topic_path": chunk.topic_path if chunk else "",
             })
 
         total_input = 0
         total_output = 0
-        processed = 0
+        processed_groups = 0
+        total_cards_updated = 0
 
         with ThreadPoolExecutor(max_workers=14) as executor:
             futures = {
-                executor.submit(generate_supplemental_for_card, client, cd, rules_text, model, field_type): cd
-                for cd in card_dicts
+                executor.submit(
+                    generate_supplemental_for_group, client, condition, group_cards, rules_text, model
+                ): (condition, group_cards)
+                for condition, group_cards in condition_groups.items()
             }
             for future in as_completed(futures):
-                cd = futures[future]
+                condition, group_cards = futures[future]
                 try:
-                    text, usage = future.result()
-                    card = db.get(Card, cd["id"])
-                    setattr(card, field_type, text)
+                    vignette, teaching_case, usage = future.result()
+                    # Apply same vignette + teaching case to all cards in this condition
+                    card_ids_in_group = [c["id"] for c in group_cards]
+                    db.query(Card).filter(Card.id.in_(card_ids_in_group)).update(
+                        {"vignette": vignette, "teaching_case": teaching_case},
+                        synchronize_session="fetch",
+                    )
                     total_input += usage.get("input_tokens", 0)
                     total_output += usage.get("output_tokens", 0)
+                    total_cards_updated += len(card_ids_in_group)
                 except Exception:
-                    logger.exception("Error generating %s for card %d", field_type, cd["id"])
+                    logger.exception("Error generating supplemental for condition '%s'", condition)
                 finally:
-                    processed += 1
-                    job.processed_chunks = processed
+                    processed_groups += 1
+                    job.processed_chunks = processed_groups
                     db.commit()
 
         cost = compute_cost(model, total_input, total_output)
         db.add(AIUsageLog(
-            operation=f"{field_type}_generation",
+            operation="supplemental_generation",
             model=model,
             input_tokens=total_input,
             output_tokens=total_output,
@@ -466,7 +456,7 @@ def _run_supplemental(
         job.status = JobStatus.done
         job.actual_input_tokens = total_input
         job.actual_output_tokens = total_output
-        job.total_cards = processed
+        job.total_cards = total_cards_updated
         job.finished_at = utcnow()
         db.commit()
 
@@ -487,6 +477,7 @@ def _run_supplemental(
         else:
             _fail_job(db, job_id, f"Anthropic API error ({e.status_code}): {e.message}")
     except Exception as e:
+        logger.exception("_run_supplemental failed")
         _fail_job(db, job_id, str(e))
     finally:
         db.close()

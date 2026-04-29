@@ -20,10 +20,8 @@ import {
   regenerateCard,
   exportCardsUrl,
   bulkMarkReviewed,
-  estimateVignettes,
-  startVignettes,
-  estimateTeachingCases,
-  startTeachingCases,
+  estimateSupplemental,
+  startSupplemental,
 } from '../api';
 import type { Card, CostEstimate, CardStatus, SupplementalEstimate } from '../types';
 import ConfirmModal from '../components/ConfirmModal';
@@ -560,7 +558,7 @@ export default function CardsPanel({
   onReviewChange,
   onGoToChunk,
 }: CardsPanelProps) {
-  const { selectedModel, selectedRuleSetId, vignetteModel, vignetteRuleSetId, teachingCaseModel, teachingCaseRuleSetId } = useSettings();
+  const { selectedModel, selectedRuleSetId, vignetteModel, vignetteRuleSetId } = useSettings();
 
   // ── Generation controls state ──────────────────────────────────────────────
   const [estimate, setEstimate] = useState<CostEstimate | null>(null);
@@ -622,7 +620,6 @@ export default function CardsPanel({
   // ── Supplemental generation (vignettes / teaching cases) ──────────────────
   const [supplementalJobId, setSupplementalJobId] = useState<number | null>(null);
   const [supplementalPending, setSupplementalPending] = useState<{
-    type: 'vignette' | 'teaching_case';
     replaceExisting: boolean;
     cardIds: number[];
     estimate: SupplementalEstimate | null;
@@ -953,20 +950,16 @@ export default function CardsPanel({
 
   // ── Supplemental generation handlers ─────────────────────────────────────
   async function handleSupplementalClick(
-    type: 'vignette' | 'teaching_case',
     replaceExisting: boolean,
     cardIds: number[]
   ) {
     if (cardIds.length === 0) return;
-    const model = type === 'vignette' ? vignetteModel : teachingCaseModel;
     setSupplementalEstimating(true);
     try {
-      const est = type === 'vignette'
-        ? await estimateVignettes({ card_ids: cardIds, model })
-        : await estimateTeachingCases({ card_ids: cardIds, model });
-      setSupplementalPending({ type, replaceExisting, cardIds, estimate: est });
+      const est = await estimateSupplemental({ card_ids: cardIds, model: vignetteModel });
+      setSupplementalPending({ replaceExisting, cardIds, estimate: est });
     } catch {
-      setSupplementalPending({ type, replaceExisting, cardIds, estimate: null });
+      setSupplementalPending({ replaceExisting, cardIds, estimate: null });
     } finally {
       setSupplementalEstimating(false);
     }
@@ -974,27 +967,24 @@ export default function CardsPanel({
 
   async function handleSupplementalConfirm() {
     if (!supplementalPending) return;
-    const { type, replaceExisting, cardIds } = supplementalPending;
+    const { replaceExisting, cardIds } = supplementalPending;
     setSupplementalPending(null);
 
-    // Resolve rule set id — use settings value, fall back to default for the type
-    let ruleId = type === 'vignette' ? vignetteRuleSetId : teachingCaseRuleSetId;
+    // Resolve rule set id — try vignette rules first, fall back to any supplemental default
+    let ruleId = vignetteRuleSetId;
     if (ruleId == null) {
       try {
-        const rules = await getRuleSets(type === 'vignette' ? 'vignette' : 'teaching_case');
+        const rules = await getRuleSets('vignette');
         ruleId = rules.find(r => r.is_default)?.id ?? rules[0]?.id ?? null;
       } catch { /* leave null */ }
     }
     if (ruleId == null) {
-      setActionError('No rule set configured for this type. Please set one in Settings.');
+      setActionError('No vignette rule set configured. Please set one in Settings or Library > Rules.');
       return;
     }
 
-    const model = type === 'vignette' ? vignetteModel : teachingCaseModel;
     try {
-      const resp = type === 'vignette'
-        ? await startVignettes({ card_ids: cardIds, rule_set_id: ruleId, model, replace_existing: replaceExisting })
-        : await startTeachingCases({ card_ids: cardIds, rule_set_id: ruleId, model, replace_existing: replaceExisting });
+      const resp = await startSupplemental({ card_ids: cardIds, rule_set_id: ruleId, model: vignetteModel, replace_existing: replaceExisting });
       setSupplementalJobId(resp.job_id);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to start generation');
@@ -1502,49 +1492,29 @@ export default function CardsPanel({
               </button>
             )}
 
-            {/* ── Vignette / Teaching Case generation buttons ── */}
+            {/* ── Vignette + Teaching Case generation buttons ── */}
             {(() => {
               const selCards = cards.filter(c => selectedIds.has(c.id));
-              const noVignette = selCards.filter(c => !c.vignette);
-              const hasVignette = selCards.filter(c => c.vignette);
-              const noTC = selCards.filter(c => !c.teaching_case);
-              const hasTC = selCards.filter(c => c.teaching_case);
+              const needsGen = selCards.filter(c => !c.vignette || !c.teaching_case);
+              const hasGen = selCards.filter(c => c.vignette && c.teaching_case);
               return (
                 <>
-                  {noVignette.length > 0 && (
+                  {needsGen.length > 0 && (
                     <button
                       disabled={supplementalEstimating || !!supplementalJobId}
-                      onClick={() => handleSupplementalClick('vignette', false, noVignette.map(c => c.id))}
+                      onClick={() => handleSupplementalClick(false, needsGen.map(c => c.id))}
                       className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
                     >
-                      Generate Vignettes ({noVignette.length})
+                      Generate Vignettes &amp; Cases ({needsGen.length})
                     </button>
                   )}
-                  {hasVignette.length > 0 && (
+                  {hasGen.length > 0 && (
                     <button
                       disabled={supplementalEstimating || !!supplementalJobId}
-                      onClick={() => handleSupplementalClick('vignette', true, hasVignette.map(c => c.id))}
+                      onClick={() => handleSupplementalClick(true, hasGen.map(c => c.id))}
                       className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
                     >
-                      Regenerate Vignettes ({hasVignette.length})
-                    </button>
-                  )}
-                  {noTC.length > 0 && (
-                    <button
-                      disabled={supplementalEstimating || !!supplementalJobId}
-                      onClick={() => handleSupplementalClick('teaching_case', false, noTC.map(c => c.id))}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-teal-600 rounded-lg hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
-                    >
-                      Generate Teaching Cases ({noTC.length})
-                    </button>
-                  )}
-                  {hasTC.length > 0 && (
-                    <button
-                      disabled={supplementalEstimating || !!supplementalJobId}
-                      onClick={() => handleSupplementalClick('teaching_case', true, hasTC.map(c => c.id))}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
-                    >
-                      Regenerate Teaching Cases ({hasTC.length})
+                      Regenerate ({hasGen.length})
                     </button>
                   )}
                   {supplementalJobId && (
@@ -1717,15 +1687,11 @@ export default function CardsPanel({
 
       {supplementalPending && (
         <ConfirmModal
-          title={
-            supplementalPending.type === 'vignette'
-              ? (supplementalPending.replaceExisting ? 'Regenerate Vignettes?' : 'Generate Vignettes?')
-              : (supplementalPending.replaceExisting ? 'Regenerate Teaching Cases?' : 'Generate Teaching Cases?')
-          }
+          title={supplementalPending.replaceExisting ? 'Regenerate Vignettes & Cases?' : 'Generate Vignettes & Cases?'}
           message={
             supplementalPending.estimate
-              ? `${supplementalPending.replaceExisting ? 'Regenerate' : 'Generate'} ${supplementalPending.type === 'vignette' ? 'vignettes' : 'teaching cases'} for ${supplementalPending.estimate.card_count} card${supplementalPending.estimate.card_count !== 1 ? 's' : ''}?\n\nEstimated cost: ~$${supplementalPending.estimate.estimated_cost_usd.toFixed(3)} (${supplementalPending.estimate.estimated_input_tokens.toLocaleString()} in / ${supplementalPending.estimate.estimated_output_tokens.toLocaleString()} out tokens).`
-              : `${supplementalPending.replaceExisting ? 'Regenerate' : 'Generate'} ${supplementalPending.type === 'vignette' ? 'vignettes' : 'teaching cases'} for ${supplementalPending.cardIds.length} card${supplementalPending.cardIds.length !== 1 ? 's' : ''}?`
+              ? `${supplementalPending.replaceExisting ? 'Regenerate' : 'Generate'} vignettes and teaching cases for ${supplementalPending.estimate.card_count} cards (${(supplementalPending.estimate as any).condition_groups ?? '?'} condition groups)?\n\nEstimated cost: ~$${supplementalPending.estimate.estimated_cost_usd.toFixed(3)}`
+              : `${supplementalPending.replaceExisting ? 'Regenerate' : 'Generate'} vignettes and teaching cases for ${supplementalPending.cardIds.length} cards?`
           }
           confirmLabel={supplementalPending.replaceExisting ? 'Regenerate' : 'Generate'}
           variant="primary"

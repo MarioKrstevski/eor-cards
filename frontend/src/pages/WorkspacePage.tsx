@@ -19,10 +19,8 @@ import {
   deleteCurriculumNode,
   previewReassignTopics,
   confirmReassignTopics,
-  estimateVignettes,
-  startVignettes,
-  estimateTeachingCases,
-  startTeachingCases,
+  estimateSupplemental,
+  startSupplemental,
   getCards,
 } from '../api';
 import type {
@@ -659,149 +657,75 @@ interface PostGenScreenProps {
 }
 
 function PostGenScreen({ docId, totalCards, onSkip, refreshUsage }: PostGenScreenProps) {
-  const { vignetteModel, vignetteRuleSetId, teachingCaseModel, teachingCaseRuleSetId } = useSettings();
+  const { vignetteModel, vignetteRuleSetId } = useSettings();
 
-  // vignette job state
-  const [vignetteLoading, setVignetteLoading] = useState(false);
-  const [vignetteDone, setVignetteDone] = useState(false);
-  const [vignetteJobId, setVignetteJobId] = useState<number | null>(null);
-  const [vignetteProgress, setVignetteProgress] = useState<string | null>(null);
-
-  // TC job state
-  const [tcLoading, setTcLoading] = useState(false);
-  const [tcDone, setTcDone] = useState(false);
-  const [tcJobId, setTcJobId] = useState<number | null>(null);
-  const [tcProgress, setTcProgress] = useState<string | null>(null);
-
-  // confirm modal state
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+  const [jobId, setJobId] = useState<number | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{
-    type: 'vignette' | 'tc';
-    estimate: { estimated_cost_usd: number; card_count: number; estimated_input_tokens: number; estimated_output_tokens: number };
+    estimate: { estimated_cost_usd: number; card_count: number };
     cardIds: number[];
     ruleId: number;
   } | null>(null);
 
-  // Poll vignette job
+  // Poll job
   useEffect(() => {
-    if (!vignetteJobId) return;
+    if (!jobId) return;
     const interval = setInterval(async () => {
       try {
-        const job = await getGenerationJob(vignetteJobId);
-        setVignetteProgress(`${job.processed_chunks}/${job.total_chunks}`);
+        const job = await getGenerationJob(jobId);
+        setProgress(`${job.processed_chunks}/${job.total_chunks} conditions`);
         if (job.status === 'done' || job.status === 'failed') {
           clearInterval(interval);
-          setVignetteJobId(null);
-          setVignetteLoading(false);
-          if (job.status === 'done') {
-            setVignetteDone(true);
-            refreshUsage();
-          }
-          setVignetteProgress(job.status === 'done' ? 'Done' : 'Failed');
-          setTimeout(() => setVignetteProgress(null), 3000);
+          setJobId(null);
+          setLoading(false);
+          if (job.status === 'done') { setDone(true); refreshUsage(); }
+          setProgress(job.status === 'done' ? 'Done!' : 'Failed');
         }
-      } catch {
-        // keep polling
-      }
+      } catch { /* keep polling */ }
     }, 2000);
     return () => clearInterval(interval);
-  }, [vignetteJobId, refreshUsage]);
+  }, [jobId, refreshUsage]);
 
-  // Poll TC job
-  useEffect(() => {
-    if (!tcJobId) return;
-    const interval = setInterval(async () => {
-      try {
-        const job = await getGenerationJob(tcJobId);
-        setTcProgress(`${job.processed_chunks}/${job.total_chunks}`);
-        if (job.status === 'done' || job.status === 'failed') {
-          clearInterval(interval);
-          setTcJobId(null);
-          setTcLoading(false);
-          if (job.status === 'done') {
-            setTcDone(true);
-            refreshUsage();
-          }
-          setTcProgress(job.status === 'done' ? 'Done' : 'Failed');
-          setTimeout(() => setTcProgress(null), 3000);
-        }
-      } catch {
-        // keep polling
-      }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [tcJobId, refreshUsage]);
-
-  async function handleVignetteClick() {
-    setVignetteLoading(true);
+  async function handleGenerateClick() {
+    setLoading(true);
     try {
       const cards = await getCards({ document_id: docId });
       const cardIds = cards.filter((c) => c.status === 'active').map((c) => c.id);
-      if (cardIds.length === 0) { setVignetteLoading(false); return; }
+      if (cardIds.length === 0) { setLoading(false); return; }
 
-      // Resolve rule set ID
       let ruleId = vignetteRuleSetId;
       if (!ruleId) {
         const rules = await getRuleSets('vignette');
         ruleId = rules.find((r) => r.is_default)?.id ?? rules[0]?.id ?? null;
       }
-      if (!ruleId) { setVignetteLoading(false); return; }
+      if (!ruleId) { setLoading(false); return; }
 
-      const estimate = await estimateVignettes({ card_ids: cardIds, model: vignetteModel });
-      setConfirmModal({ type: 'vignette', estimate, cardIds, ruleId });
+      const estimate = await estimateSupplemental({ card_ids: cardIds, model: vignetteModel });
+      setConfirmModal({ estimate, cardIds, ruleId });
     } catch {
-      setVignetteLoading(false);
+      setLoading(false);
     }
   }
 
-  async function handleTcClick() {
-    setTcLoading(true);
-    try {
-      const cards = await getCards({ document_id: docId });
-      const cardIds = cards.filter((c) => c.status === 'active').map((c) => c.id);
-      if (cardIds.length === 0) { setTcLoading(false); return; }
-
-      let ruleId = teachingCaseRuleSetId;
-      if (!ruleId) {
-        const rules = await getRuleSets('teaching_case');
-        ruleId = rules.find((r) => r.is_default)?.id ?? rules[0]?.id ?? null;
-      }
-      if (!ruleId) { setTcLoading(false); return; }
-
-      const estimate = await estimateTeachingCases({ card_ids: cardIds, model: teachingCaseModel });
-      setConfirmModal({ type: 'tc', estimate, cardIds, ruleId });
-    } catch {
-      setTcLoading(false);
-    }
-  }
-
-  async function handleConfirmGenerate() {
+  async function handleConfirm() {
     if (!confirmModal) return;
-    const { type, cardIds, ruleId } = confirmModal;
+    const { cardIds, ruleId } = confirmModal;
     setConfirmModal(null);
-    if (type === 'vignette') {
-      try {
-        const resp = await startVignettes({ card_ids: cardIds, rule_set_id: ruleId, model: vignetteModel });
-        setVignetteJobId(resp.job_id);
-      } catch {
-        setVignetteLoading(false);
-      }
-    } else {
-      try {
-        const resp = await startTeachingCases({ card_ids: cardIds, rule_set_id: ruleId, model: teachingCaseModel });
-        setTcJobId(resp.job_id);
-      } catch {
-        setTcLoading(false);
-      }
+    try {
+      const resp = await startSupplemental({ card_ids: cardIds, rule_set_id: ruleId, model: vignetteModel });
+      setJobId(resp.job_id);
+    } catch {
+      setLoading(false);
     }
   }
 
-  const vignetteRunning = vignetteLoading || vignetteJobId != null;
-  const tcRunning = tcLoading || tcJobId != null;
+  const running = loading || jobId != null;
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-11 z-40 bg-white flex flex-col items-center justify-center overflow-hidden">
       <div className="w-full max-w-md px-6 text-center">
-        {/* Success icon */}
         <div className="flex items-center justify-center w-14 h-14 rounded-full bg-green-50 mx-auto mb-5">
           <svg className="h-7 w-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -810,109 +734,58 @@ function PostGenScreen({ docId, totalCards, onSkip, refreshUsage }: PostGenScree
 
         <h2 className="text-xl font-semibold text-gray-900 mb-1">Card generation complete!</h2>
         <p className="text-sm text-gray-500 mb-8">
-          {totalCards} card{totalCards !== 1 ? 's' : ''} generated. Would you like to add vignettes or teaching cases now?
+          {totalCards} card{totalCards !== 1 ? 's' : ''} generated. Would you like to add vignettes and teaching cases?
         </p>
 
-        {/* Action buttons */}
-        <div className="flex gap-3 mb-6">
-          {/* Vignettes */}
+        <div className="flex flex-col gap-3 mb-6">
           <button
-            onClick={handleVignetteClick}
-            disabled={vignetteRunning || vignetteDone}
+            onClick={handleGenerateClick}
+            disabled={running || done}
             className={[
-              'flex-1 flex flex-col items-center gap-2 px-4 py-4 rounded-xl border-2 text-sm font-medium transition-all duration-150',
-              vignetteDone
+              'flex items-center justify-center gap-2 px-6 py-3 rounded-xl border-2 text-sm font-medium transition-all duration-150',
+              done
                 ? 'border-green-300 bg-green-50 text-green-700 cursor-default'
-                : vignetteRunning
+                : running
                   ? 'border-indigo-200 bg-indigo-50 text-indigo-400 cursor-wait'
                   : 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:border-indigo-400 hover:bg-indigo-100',
             ].join(' ')}
           >
-            {vignetteDone ? (
+            {done ? (
               <>
                 <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                 </svg>
-                <span>Vignettes done</span>
+                <span>Vignettes &amp; Teaching Cases done</span>
               </>
-            ) : vignetteRunning ? (
+            ) : running ? (
               <>
                 <svg className="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                 </svg>
-                <span>{vignetteProgress ?? 'Generating...'}</span>
+                <span>{progress ?? 'Generating...'}</span>
               </>
             ) : (
-              <>
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <span>Generate Vignettes</span>
-              </>
-            )}
-          </button>
-
-          {/* Teaching Cases */}
-          <button
-            onClick={handleTcClick}
-            disabled={tcRunning || tcDone}
-            className={[
-              'flex-1 flex flex-col items-center gap-2 px-4 py-4 rounded-xl border-2 text-sm font-medium transition-all duration-150',
-              tcDone
-                ? 'border-green-300 bg-green-50 text-green-700 cursor-default'
-                : tcRunning
-                  ? 'border-teal-200 bg-teal-50 text-teal-400 cursor-wait'
-                  : 'border-teal-200 bg-teal-50 text-teal-700 hover:border-teal-400 hover:bg-teal-100',
-            ].join(' ')}
-          >
-            {tcDone ? (
-              <>
-                <svg className="h-5 w-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                <span>Teaching Cases done</span>
-              </>
-            ) : tcRunning ? (
-              <>
-                <svg className="animate-spin h-5 w-5 text-teal-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                <span>{tcProgress ?? 'Generating...'}</span>
-              </>
-            ) : (
-              <>
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <span>Generate Teaching Cases</span>
-              </>
+              <span>Generate Vignettes &amp; Teaching Cases</span>
             )}
           </button>
         </div>
 
-        {/* Skip */}
         <button
           onClick={onSkip}
           className="text-sm text-gray-400 hover:text-gray-600 transition-colors duration-150 underline underline-offset-2"
         >
-          Skip — View Cards
+          {done ? 'View Cards' : 'Skip — View Cards'}
         </button>
       </div>
 
-      {/* Cost estimate confirm modal */}
       {confirmModal && (
         <ConfirmModal
-          title={confirmModal.type === 'vignette' ? 'Generate Vignettes?' : 'Generate Teaching Cases?'}
-          message={`Estimated cost: $${confirmModal.estimate.estimated_cost_usd.toFixed(4)} for ${confirmModal.estimate.card_count} card${confirmModal.estimate.card_count !== 1 ? 's' : ''} (~${confirmModal.estimate.estimated_input_tokens.toLocaleString()} in / ${confirmModal.estimate.estimated_output_tokens.toLocaleString()} out tokens)`}
-          confirmLabel={confirmModal.type === 'vignette' ? 'Generate Vignettes' : 'Generate Teaching Cases'}
-          onConfirm={handleConfirmGenerate}
-          onCancel={() => {
-            setConfirmModal(null);
-            if (confirmModal.type === 'vignette') setVignetteLoading(false);
-            else setTcLoading(false);
-          }}
+          title="Generate Vignettes & Teaching Cases?"
+          message={`Generate for ${confirmModal.estimate.card_count} cards?\n\nEstimated cost: ~$${confirmModal.estimate.estimated_cost_usd.toFixed(3)}`}
+          confirmLabel="Generate"
+          onConfirm={handleConfirm}
+          onCancel={() => { setConfirmModal(null); setLoading(false); }}
         />
       )}
     </div>
@@ -2274,14 +2147,15 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
           flatCurriculum={flatCurriculum}
           onConfirmed={(docId, totalCards) => {
             setPendingUpload(null);
-            // Switch to documents tab and select the uploaded doc
             setSidebarTab('documents');
             setSelectedDocumentId(docId);
             setCardsRefreshKey((k) => k + 1);
-            // Show post-gen screen for vignette/TC generation
-            setPostGenDocId(docId);
-            setPostGenTotalCards(totalCards);
-            setShowPostGenScreen(true);
+            // Only show post-gen screen if cards were actually generated
+            if (totalCards > 0) {
+              setPostGenDocId(docId);
+              setPostGenTotalCards(totalCards);
+              setShowPostGenScreen(true);
+            }
           }}
           onDismiss={() => setPendingUpload(null)}
           refreshUsage={refreshUsage}
