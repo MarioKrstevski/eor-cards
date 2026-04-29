@@ -300,16 +300,25 @@ def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
     history = list(session.messages or [])
     history.append({"role": "user", "content": body.message})
 
-    # Call Claude with cached system prompt
+    # Call Claude (with prompt caching on system block, fallback to plain if unsupported)
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
-            messages=history,
-            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-        )
+        try:
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1024,
+                system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+                messages=history,
+                extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+            )
+        except Exception:
+            logger.warning("Prompt caching failed, retrying without cache_control")
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=history,
+            )
         reply = response.content[0].text
     except Exception as e:
         logger.exception("Chat failed")
