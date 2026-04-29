@@ -113,6 +113,19 @@ class GenerationJob(Base):
     rule_set: Mapped["RuleSet"] = relationship("RuleSet")
 
 
+class FeatureRequest(Base):
+    __tablename__ = "feature_requests"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # "chat" or "manual"
+    chat_session_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # "pending" or "done"
+    app_version: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
+
+
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
     id: Mapped[int] = mapped_column(primary_key=True)

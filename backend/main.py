@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.db import engine, Base
-from backend.routers import documents, cards, generate, curriculum, rules, export, usage, chat
+from backend.routers import documents, cards, generate, curriculum, rules, export, usage, chat, requests
 from backend import models  # noqa
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -118,6 +118,7 @@ app.include_router(rules.router, prefix="/api/rules", tags=["rules"])
 app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(usage.router, prefix="/api/usage", tags=["usage"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(requests.router, prefix="/api/requests", tags=["requests"])
 
 if os.path.exists(STATIC_DIR) and os.listdir(STATIC_DIR):
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")

@@ -299,6 +299,46 @@ export async function deleteChatSession(id: number): Promise<void> {
   await http.delete(`/chat/sessions/${id}`);
 }
 
+// ─── Feature Requests ────────────────────────────────────────────────────────
+
+export interface FeatureRequestItem {
+  id: number;
+  title: string;
+  description: string;
+  source: string;
+  chat_session_id: number | null;
+  status: 'pending' | 'done';
+  app_version: number;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export async function getRequests(status?: string): Promise<FeatureRequestItem[]> {
+  const params = status ? { status } : undefined;
+  const res = await http.get<FeatureRequestItem[]>('/requests', { params });
+  return res.data;
+}
+
+export async function createRequest(params: {
+  title: string; description: string; source?: string; chat_session_id?: number | null;
+}): Promise<{ id: number; title: string }> {
+  const res = await http.post<{ id: number; title: string }>('/requests', params);
+  return res.data;
+}
+
+export async function completeRequest(id: number, password: string): Promise<void> {
+  await http.post(`/requests/${id}/complete`, { password });
+}
+
+export async function deleteRequest(id: number): Promise<void> {
+  await http.delete(`/requests/${id}`);
+}
+
+export async function refineRequest(messages: { role: string; content: string }[]): Promise<string> {
+  const res = await http.post<{ content: string }>('/requests/refine', { messages });
+  return res.data.content;
+}
+
 export async function sendChatMessage(message: string, sessionId?: number | null): Promise<{
   content: string;
   session_id: number;

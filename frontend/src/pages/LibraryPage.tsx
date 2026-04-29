@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ConfirmModal from '../components/ConfirmModal';
 import ProcessesFlow from '../components/ProcessesFlow';
+import RequestsPanel from '../components/RequestsPanel';
 import { flattenTree, buildAggregatedCounts } from '../utils';
 import {
   getCurriculum,
@@ -472,7 +473,7 @@ function RuleSetModal({
 
 // ─── LibraryPage ──────────────────────────────────────────────────────────────
 
-type LibraryTab = 'curriculum' | 'rules' | 'coverage' | 'documents' | 'processes';
+type LibraryTab = 'curriculum' | 'rules' | 'coverage' | 'documents' | 'processes' | 'requests';
 
 export default function LibraryPage() {
   const navigate = useNavigate();
@@ -637,6 +638,9 @@ export default function LibraryPage() {
         </button>
         <button className={tabClass('processes')} onClick={() => setActiveTab('processes')}>
           Processes
+        </button>
+        <button className={tabClass('requests')} onClick={() => setActiveTab('requests')}>
+          Requests
         </button>
         <div className="flex-1" />
         <button
@@ -1232,6 +1236,11 @@ export default function LibraryPage() {
         {activeTab === 'processes' && (
           <div style={{ width: '100%', height: 'calc(100vh - 100px)' }}>
             <ProcessesFlow />
+          </div>
+        )}
+        {activeTab === 'requests' && (
+          <div className="flex-1 overflow-hidden">
+            <RequestsPanel />
           </div>
         )}
       </div>
