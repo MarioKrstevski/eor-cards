@@ -34,6 +34,12 @@ def _run_migrations():
         _add_col_if_missing(conn, insp, "cards", "note_id", "BIGINT")
         _add_col_if_missing(conn, insp, "generation_jobs", "job_type", "VARCHAR(20) DEFAULT 'cards'")
 
+        # v5 columns
+        _add_col_if_missing(conn, insp, "chat_sessions", "app_version", "INTEGER DEFAULT 0")
+        _add_col_if_missing(conn, insp, "chat_sessions", "updated_at", "DATETIME")
+        _add_col_if_missing(conn, insp, "feature_requests", "app_version", "INTEGER DEFAULT 0")
+        _add_col_if_missing(conn, insp, "feature_requests", "completed_at", "DATETIME")
+
         # Backfill note_id for existing cards
         cursor = conn.execute(text("SELECT id FROM cards WHERE note_id IS NULL ORDER BY created_at, id"))
         rows = cursor.fetchall()
