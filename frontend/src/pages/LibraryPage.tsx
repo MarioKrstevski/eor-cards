@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ConfirmModal from '../components/ConfirmModal';
+import ProcessesFlow from '../components/ProcessesFlow';
 import { flattenTree, buildAggregatedCounts } from '../utils';
 import {
   getCurriculum,
@@ -471,7 +472,7 @@ function RuleSetModal({
 
 // ─── LibraryPage ──────────────────────────────────────────────────────────────
 
-type LibraryTab = 'curriculum' | 'rules' | 'coverage' | 'documents';
+type LibraryTab = 'curriculum' | 'rules' | 'coverage' | 'documents' | 'processes';
 
 export default function LibraryPage() {
   const navigate = useNavigate();
@@ -633,6 +634,9 @@ export default function LibraryPage() {
         </button> */}
         <button className={tabClass('documents')} onClick={() => setActiveTab('documents')}>
           Documents
+        </button>
+        <button className={tabClass('processes')} onClick={() => setActiveTab('processes')}>
+          Processes
         </button>
         <div className="flex-1" />
         <button
@@ -1224,6 +1228,11 @@ export default function LibraryPage() {
                 </div>
               )}
             </main>
+          </div>
+        )}
+        {activeTab === 'processes' && (
+          <div className="flex-1 overflow-hidden">
+            <ProcessesFlow />
           </div>
         )}
       </div>

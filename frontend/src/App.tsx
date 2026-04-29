@@ -8,6 +8,7 @@ import SettingsPopover from './components/SettingsPopover';
 import UsageModal from './components/UsageModal';
 import CostFlash from './components/CostFlash';
 import { getUsageSummary, getRuleSets } from './api';
+import { APP_VERSION } from './version';
 
 // Inner component so it can use the SettingsContext
 function AppInner() {
@@ -91,6 +92,7 @@ function AppInner() {
           Library
         </NavLink>
         <div className="flex-1" />
+        <span className="text-[10px] text-gray-300 font-mono mr-2">v{APP_VERSION}</span>
 
         {/* Usage badge */}
         {displayedCost != null && (
