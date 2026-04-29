@@ -9,6 +9,7 @@ import UsageModal from './components/UsageModal';
 import CostFlash from './components/CostFlash';
 import { getUsageSummary, getRuleSets } from './api';
 import { APP_VERSION } from './version';
+import HelpChat from './components/HelpChat';
 
 // Inner component so it can use the SettingsContext
 function AppInner() {
@@ -158,6 +159,7 @@ export default function App() {
     <SettingsProvider>
       <BrowserRouter>
         <AppInner />
+        <HelpChat />
       </BrowserRouter>
     </SettingsProvider>
   );

@@ -231,11 +231,70 @@ const nodes: Node[] = [
       ],
     },
   },
+  // ─── SIDEBAR: Management & Settings (left column) ─────────────────────────
+
+  {
+    id: 'settings_block',
+    type: 'step',
+    position: { x: -220, y: 0 },
+    data: {
+      icon: '⚙️',
+      label: 'Settings (Gear Icon)',
+      description: 'Configure models and rules before generating. Settings are saved to your browser.',
+      info: 'Card Generation: Model + Rules. Vignette + Teaching Case: Model + Rules. Chunking model is fixed to Haiku.',
+    },
+  },
+  {
+    id: 'rules_block',
+    type: 'step',
+    position: { x: -220, y: 200 },
+    data: {
+      icon: '📝',
+      label: 'Rules (Library > Rules)',
+      description: 'Create and manage prompt templates. Two types: Generation (for cards) and Vignette + Teaching Case (for supplemental content).',
+      info: 'Set one default per type. The client\'s prompt goes here — it tells the AI exactly how to format output.',
+    },
+  },
+  {
+    id: 'curriculum_block',
+    type: 'step',
+    position: { x: -220, y: 400 },
+    data: {
+      icon: '🌳',
+      label: 'Curriculum (Workspace Sidebar)',
+      description: 'Manage the topic tree. Add, rename, delete, or reorganize topics. Topics are hierarchical: Parent > Child > Leaf.',
+      info: 'Leaf topics = conditions. Cards are tagged with the full path. Deleting a topic reassigns chunks to parent and removes the tag from cards.',
+    },
+  },
+  {
+    id: 'reassign_block',
+    type: 'step',
+    position: { x: -220, y: 600 },
+    data: {
+      icon: '🔄',
+      label: 'Reassign Topics',
+      description: 'Re-run AI topic detection on chunks under a topic. Use when curriculum structure changes or initial assignments were wrong.',
+      aiPowered: true,
+      info: 'Click "Reassign" on a topic in the sidebar. AI suggests new topic for each chunk. Review and confirm before saving.',
+    },
+  },
+  {
+    id: 'documents_block',
+    type: 'step',
+    position: { x: -220, y: 800 },
+    data: {
+      icon: '📚',
+      label: 'Documents (Library > Documents)',
+      description: 'View all uploaded/pasted documents. See chunk counts and card counts. Click to navigate to document in workspace.',
+      info: 'Filter by topic to find documents for a specific condition. Rename or delete documents here.',
+    },
+  },
+
   // Row 9: Review
   {
     id: 'review_cards',
     type: 'step',
-    position: { x: 300, y: 1410 },
+    position: { x: 300, y: 1460 },
     data: {
       icon: '✏️',
       label: 'Review & Edit Cards',
@@ -247,7 +306,7 @@ const nodes: Node[] = [
   {
     id: 'export',
     type: 'step',
-    position: { x: 300, y: 1590 },
+    position: { x: 300, y: 1700 },
     data: {
       icon: '📤',
       label: 'Export to Anki',

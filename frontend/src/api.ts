@@ -264,3 +264,10 @@ export async function getUsageSummary(): Promise<AIUsageSummary> {
   const res = await http.get<AIUsageSummary>('/usage/summary');
   return res.data;
 }
+
+// ─── Chat ────────────────────────────────────────────────────────────────────
+
+export async function sendChatMessage(messages: { role: string; content: string }[]): Promise<string> {
+  const res = await http.post<{ content: string }>('/chat', { messages });
+  return res.data.content;
+}
