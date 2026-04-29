@@ -242,7 +242,7 @@ export default function HelpChat() {
               </div>
             )}
             {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                 <div className={`max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed ${
                   msg.role === 'user'
                     ? 'bg-blue-600 text-white rounded-br-md'
@@ -260,7 +260,6 @@ export default function HelpChat() {
                 {msg.role === 'assistant' && /contact mario/i.test(msg.content) && (
                   <button
                     onClick={async () => {
-                      // Extract the description after "Contact Mario and tell him:"
                       const match = msg.content.match(/(?:contact mario[^:]*:\s*)([\s\S]+)/i);
                       const desc = match ? match[1].trim() : msg.content;
                       const prevUserMsg = messages[i - 1]?.content || '';
@@ -275,7 +274,7 @@ export default function HelpChat() {
                       } catch { /* ignore */ }
                     }}
                     disabled={requestAdded === i}
-                    className={`mt-1 text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                    className={`mt-1.5 text-xs px-2.5 py-1 rounded-lg font-medium transition-colors ${
                       requestAdded === i
                         ? 'bg-green-100 text-green-700 cursor-default'
                         : 'bg-amber-100 text-amber-700 hover:bg-amber-200'

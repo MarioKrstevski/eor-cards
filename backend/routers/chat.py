@@ -300,57 +300,14 @@ def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
     history = list(session.messages or [])
     history.append({"role": "user", "content": body.message})
 
-    # Build messages with prompt caching on the system documentation block.
-    # We inject the system prompt as a cached user content block prepended to the
-    # first user message, so it is cached across all turns in this session.
-    if len(history) == 1:
-        # First message — prepend cached system doc block
-        api_messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    },
-                    {
-                        "type": "text",
-                        "text": body.message,
-                    },
-                ],
-            }
-        ]
-    else:
-        # Subsequent messages — history already has the first user turn stored as plain text.
-        # Rebuild: inject cached block on first user message, rest as-is.
-        api_messages = []
-        for i, msg in enumerate(history):
-            if i == 0 and msg["role"] == "user":
-                api_messages.append({
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": SYSTEM_PROMPT,
-                            "cache_control": {"type": "ephemeral"},
-                        },
-                        {
-                            "type": "text",
-                            "text": msg["content"] if isinstance(msg["content"], str) else msg["content"],
-                        },
-                    ],
-                })
-            else:
-                api_messages.append(msg)
-
-    # Call Claude
+    # Call Claude with cached system prompt
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1024,
-            messages=api_messages,
+            system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            messages=history,
             extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
         reply = response.content[0].text
@@ -358,7 +315,6 @@ def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
         logger.exception("Chat failed")
         reply = f"Sorry, I encountered an error: {str(e)[:200]}"
 
-    # Persist plain-text history (no cache_control blocks in DB)
     history.append({"role": "assistant", "content": reply})
     session.messages = history
     session.updated_at = utcnow()
