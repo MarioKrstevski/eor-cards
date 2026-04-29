@@ -493,7 +493,7 @@ export default function LibraryPage() {
   const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
   const [creatingRuleSet, setCreatingRuleSet] = useState(false);
   const [ruleSetError, setRuleSetError] = useState<string | null>(null);
-  const [ruleSubTab, setRuleSubTab] = useState<'generation' | 'vignette' | 'teaching_case'>('generation');
+  const [ruleSubTab, setRuleSubTab] = useState<'generation' | 'vignette'>('generation');
   const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
   const [editContent, setEditContent] = useState('');
@@ -865,12 +865,11 @@ export default function LibraryPage() {
                 </div>
                 {/* Sub-tabs */}
                 <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-                  {(['generation', 'vignette', 'teaching_case'] as const).map((type) => {
-                    const labels: Record<typeof type, string> = {
+                  {(['generation', 'vignette'] as const).map((type) => {
+                    const labels = {
                       generation: 'Generation',
-                      vignette: 'Vignette',
-                      teaching_case: 'Teaching',
-                    };
+                      vignette: 'Vignette + Teaching Case',
+                    } as const;
                     return (
                       <button
                         key={type}
@@ -1231,7 +1230,7 @@ export default function LibraryPage() {
           </div>
         )}
         {activeTab === 'processes' && (
-          <div className="flex-1 overflow-hidden">
+          <div style={{ width: '100%', height: 'calc(100vh - 100px)' }}>
             <ProcessesFlow />
           </div>
         )}

@@ -67,17 +67,15 @@ def seed_data():
 
         if not db.query(RuleSet).filter_by(rule_type="vignette").first():
             db.add(RuleSet(
-                name="Default Vignette Rules",
+                name="Default Vignette + Teaching Case Rules",
                 rule_type="vignette",
-                content="Generate a concise clinical vignette for the following flashcard. The vignette should be a brief mini-lesson (2-4 sentences) that reminds the student of the key concept being tested. Include relevant clinical context, pathophysiology, or diagnostic pearls. Write in a clear, educational tone.",
-                is_default=True,
-            ))
+                content="""You will receive a set of finished Anki cloze cards for a single condition. Generate both a clinical vignette (COLUMN 5) and a teaching case (COLUMN 6) for this condition.
 
-        if not db.query(RuleSet).filter_by(rule_type="teaching_case").first():
-            db.add(RuleSet(
-                name="Default Teaching Case Rules",
-                rule_type="teaching_case",
-                content="Generate a realistic clinical teaching case for the following flashcard. Present a patient scenario (age, sex, chief complaint, relevant history, physical exam findings, and key lab/imaging results) that leads to the diagnosis or concept on the card. The case should test clinical reasoning — the student should be able to arrive at the answer through the clues provided. Keep it to one paragraph.",
+For COLUMN 5 (Vignette): Write a 4-6 sentence clinical vignette that serves as a memorable anchor. Begin with a patient presentation using a memorable alliterative name tied to the diagnosis. Include hallmark signs, symptoms, and a key diagnostic finding. End with a clinical decision-making pearl.
+
+For COLUMN 6 (Teaching Case): Write a comprehensive clinical teaching case using the same patient name. Include sections: Patient Presentation, Physical Examination, Workup and Diagnosis, Treatment, Follow Up and Monitoring, and PA EOR Board Pearls (5-8 numbered items).
+
+STYLE: Second person present tense. Bold key clinical terms using <b> tags. Use <br> for line breaks. Do NOT use markdown. PA scope throughout.""",
                 is_default=True,
             ))
         db.commit()

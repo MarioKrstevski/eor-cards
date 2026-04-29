@@ -7,10 +7,8 @@ export default function SettingsPopover({ onClose }: { onClose: () => void }) {
   const {
     selectedModel, setSelectedModel,
     vignetteModel, setVignetteModel,
-    teachingCaseModel, setTeachingCaseModel,
     selectedRuleSetId, setSelectedRuleSetId,
     vignetteRuleSetId, setVignetteRuleSetId,
-    teachingCaseRuleSetId, setTeachingCaseRuleSetId,
   } = useSettings();
   const [models, setModels] = useState<Model[]>([]);
   const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
@@ -50,7 +48,6 @@ export default function SettingsPopover({ onClose }: { onClose: () => void }) {
 
   const generationRules = ruleSets.filter((rs) => rs.rule_type === 'generation');
   const vignetteRules = ruleSets.filter((rs) => rs.rule_type === 'vignette');
-  const teachingCaseRules = ruleSets.filter((rs) => rs.rule_type === 'teaching_case');
 
   const selectClass =
     'text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors duration-150';
@@ -132,9 +129,9 @@ export default function SettingsPopover({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
 
-              {/* Vignette section */}
+              {/* Supplemental (Vignettes + Teaching Cases) section */}
               <div>
-                <p className={sectionHeaderClass}>Vignette</p>
+                <p className={sectionHeaderClass}>Vignette + Teaching Case</p>
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-col gap-1.5">
                     <label className={labelClass}>Model</label>
@@ -143,21 +140,6 @@ export default function SettingsPopover({ onClose }: { onClose: () => void }) {
                   <div className="flex flex-col gap-1.5">
                     <label className={labelClass}>Rules</label>
                     <RulesSelect value={vignetteRuleSetId} onChange={setVignetteRuleSetId} options={vignetteRules} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Teaching Case section */}
-              <div>
-                <p className={sectionHeaderClass}>Teaching Case</p>
-                <div className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <label className={labelClass}>Model</label>
-                    <ModelSelect value={teachingCaseModel} onChange={setTeachingCaseModel} fallback={teachingCaseModel} />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className={labelClass}>Rules</label>
-                    <RulesSelect value={teachingCaseRuleSetId} onChange={setTeachingCaseRuleSetId} options={teachingCaseRules} />
                   </div>
                 </div>
               </div>
