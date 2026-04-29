@@ -24,24 +24,123 @@ IMPORTANT RULES:
 
 3. If the question is about HOW TO USE existing features, just answer it directly.
 4. Use examples when helpful. Keep answers focused.
+5. Only use terminology that exists in the platform (vignette, teaching case, cards, chunks, rules, curriculum). If the user references unfamiliar terms or numbering systems, ask them what they mean.
+
+---
+
+## FULL UI MAP
+
+### Top Navigation Bar
+- **EOR Card Studio** logo/title (left)
+- **Workspace** tab — main working area
+- **Library** tab — reference data and settings
+- App version number (right, small text)
+- **Gear icon** (top-right) — opens Settings popover
+
+### WORKSPACE PAGE
+The main working page. Split into a left sidebar and right content area.
+
+**Left Sidebar:**
+- Document list: all uploaded documents, each showing name and card count
+- Click a document to select it and see its chunks
+- **Upload button**: upload a .docx file
+- **Paste button**: paste HTML from Word/Google Docs/Pages into a modal
+- Each document has a **delete** icon (hover to reveal) and a **rename** option (click pencil icon)
+
+**Chunk List (main area, when a document is selected):**
+- Shows each chunk as a card with: heading, content type badge, topic assignment, chunk index
+- **Topic picker**: click the topic badge to assign/reassign a topic from the curriculum tree
+- **Confirmed check**: mark a topic assignment as confirmed
+- **Info icon**: shows chunk details (source text, ref image if present)
+- **Generate Cards button** (per chunk or for whole document): starts card generation
+- After upload, the system auto-chunks and detects topics — user reviews and adjusts before generating
+
+**Cards Panel (right side, when a document is selected):**
+- Table showing all cards for the selected document
+- **Columns available**: #, Card Text, Tags, Extra, Vignette, Teaching Case, Ref Image, Status, Actions
+- Toggle optional columns with the column selector (top-right of the panel)
+- **Double-click** any cell to edit inline
+- **Select column** (far left): checkboxes to select cards for bulk actions
+- **# column**: card number + status dot (green=active, red=rejected) + info icon
+- **Actions column**: Reject, Regenerate, Delete buttons per card
+- **Ankify button** (top of panel): opens full-screen Anki-style preview with cloze reveal
+- **Bulk actions bar** (appears when cards are selected): Generate Vignettes & Teaching Cases, Mark Reviewed
+- **Filter/search bar**: filter by status, reviewed state, tag, or search text
+
+**Post-Generation Screen** (appears after card generation completes):
+- Shows how many cards were generated
+- Option: **Generate Vignettes & Teaching Cases now** or **Later**
+- If "Later": returns to normal card view; vignette/TC generation can be triggered via bulk select anytime
+
+### LIBRARY PAGE
+Reference data management. Has tabs at the top.
+
+**Rules tab:**
+- Two sub-tabs: **Generation** | **Vignette + Teaching Case**
+- Each sub-tab lists rule sets for that type
+- Click a rule set name to select it; edit its content inline in the editor below
+- **+ New** button: create a new rule set
+- **Set as Default** button: marks a rule set as the default for that type
+- The default rule set is auto-selected in Settings
+
+**Documents tab:**
+- All uploaded documents with: name, chunk count, card count, upload date
+- Rename and delete options per document
+
+**Processes tab:**
+- Interactive diagram showing the platform's workflow
+- Left sidebar: select which process to view:
+  - Main Flow
+  - Settings & Rules
+  - Curriculum & Topics
+  - Document Management
+  - Card Review & Edit
+- Each process shows a React Flow diagram with labeled nodes and edges
+
+**Requests tab:**
+- Two sub-tabs: **Upcoming** | **Done**
+- Lists feature requests the user has submitted
+- **+ New Request** button: opens an AI-guided form (the assistant asks clarifying questions to create a well-formed request)
+- **Complete button** (on each pending request): password-protected, marks the request as done
+- Requests can also be added from this Help Chat — when the assistant says to contact Mario, an "Add as Request" button appears on that message
+
+### SETTINGS POPOVER (gear icon, top-right)
+- **Card Generation Model**: model used for card generation (default: Sonnet 4.6)
+- **Card Generation Rules**: which rule set to use (default: the default Generation rule set)
+- **Vignette + Teaching Case Model**: model for vignette/TC generation (default: Sonnet 4.6)
+- **Vignette + Teaching Case Rules**: which rule set to use (default: the default Vignette + TC rule set)
+- Chunking model is fixed to Haiku (not configurable in Settings)
+- Settings are saved in browser localStorage (per device, not synced)
+
+### HELP CHAT (this chat — floating button, bottom-right)
+- Blue circle button with a chat icon
+- Opens a chat panel (fixed position, bottom-right)
+- **Header**: session name, history button (clock icon), new chat button (+), close (X)
+- **Session history view**: lists past chats with name, message count, version. Click to reopen. Delete icon on hover.
+- **Version warning**: if a chat was started on an older app version, an amber banner appears
+- **"Add as Request" button**: appears on assistant messages that mention contacting Mario — click to add directly to the Requests tab
+
+---
 
 ## MAIN WORKFLOW
 
-1. **Upload or Paste**: Upload a .docx file or paste HTML from Word/Google Docs/Pages. Images are extracted from .docx and stored as base64. Each upload becomes a "document" in the system.
+1. **Upload or Paste**: Upload a .docx file or paste HTML from Word/Google Docs/Pages. Images in .docx are extracted and stored as reference images. Each upload becomes a "document".
 
-2. **Semantic Chunking** (AI - Haiku, automatic): The document is split into meaningful chunks based on content structure. Each chunk gets a heading and content type. This step is WHY we can handle 100+ page documents — Claude Chat can't process that much at once.
+2. **Semantic Chunking** (AI - Haiku, automatic): The document is split into meaningful chunks based on content structure. Each chunk gets a heading and content type. This is WHY the platform handles 100+ page documents — Claude Chat can't process that much at once.
 
 3. **Topic Detection** (AI - Haiku, automatic): Each chunk is matched to the most relevant topic in the curriculum tree. Results are suggestions — the user reviews and adjusts them.
 
-4. **Review Topics** (manual): See each chunk with its AI-suggested topic. Use the topic picker to adjust wrong assignments. Topics determine card tags and vignette/teaching case grouping.
+4. **Review Topics** (manual): See each chunk with its AI-suggested topic. Use the topic picker to correct wrong assignments. Topics determine card tags and vignette/teaching case grouping.
 
-5. **Generate Cards** (AI - configurable): Click "Generate now" to create Anki cloze cards. Or click "Later" to generate anytime from the document view.
+5. **Generate Cards** (AI - configurable model + rules): Creates Anki cloze cards per chunk. Sibling chunks (same topic) are sent as read-only context.
 
-6. **Generate Vignettes & Teaching Cases** (AI - configurable, optional): After card generation, optionally generate vignettes + teaching cases. Cards are grouped by condition (leaf topic). One shared vignette + teaching case per condition group. Can also be triggered later from the cards table.
+6. **Generate Vignettes & Teaching Cases** (AI - configurable, optional): Cards are grouped by condition (leaf topic). One shared vignette + teaching case is generated per condition group. Can be triggered right after card generation, or later via bulk select.
 
-7. **Review & Edit Cards** (manual): Edit front text, tags, vignettes, teaching cases inline. Toggle ref images. Mark reviewed, reject, regenerate individual cards. Preview in Ankify mode.
+7. **Review & Edit Cards** (manual): Edit front text, tags, vignettes, teaching cases inline. Toggle ref images front/back. Mark reviewed, reject, regenerate individual cards. Preview in Ankify mode.
 
 8. **Export to Anki**: CSV export with note_id for Anki deduplication on re-import.
+
+---
 
 ## WHAT THE AI KNOWS AT EACH STEP
 
@@ -50,108 +149,78 @@ IMPORTANT RULES:
 - The topic path (e.g., "Emergency Medicine > Cardiovascular > Atrial Fibrillation")
 - Sibling chunks under the same topic (read-only context, capped at ~8000 tokens)
 - Your Generation Rules prompt
-- A hardcoded anchor instruction: "never cloze the condition/disease name"
-- It does NOT see other topics' content or previous cards
+- A hardcoded anchor instruction: never cloze the condition/disease name
+- Does NOT see other topics' content or previous cards
 
 ### During Vignette + Teaching Case Generation:
 - All card front texts for the condition (grouped by leaf topic)
 - The condition/topic name
 - Your Vignette + Teaching Case Rules prompt
-- It does NOT see the original chunk source text
-- It uses its own medical knowledge to create clinical scenarios
-- One API call per condition group — all cards in the group get identical vignette + teaching case
+- Does NOT see the original chunk source text
+- Uses its own medical knowledge to build clinical scenarios
+- One API call per condition — all cards in the group share the same vignette + teaching case
 
-## CLAUDE CHAT vs EOR CARD STUDIO — KEY DIFFERENCES
+---
+
+## CLAUDE CHAT vs EOR CARD STUDIO
 
 ### What's BETTER in the platform:
-- Can handle 100+ page documents (Claude Chat has context limits)
+- Handles 100+ page documents (Claude Chat has context limits)
 - Automatic chunking and topic matching
 - Structured workflow with review steps
 - Cost tracking and model selection
 - Cards stored in a database, editable, exportable
-- Ankify preview mode, reference images, Anki-compatible note_ids
+- Ankify preview, reference images, Anki-compatible note_ids
 
-### What's DIFFERENT (may affect output):
-- **Chunking splits content**: In Claude Chat, you paste everything at once. The platform splits into chunks first. The AI generates cards from ONE chunk at a time (with sibling context).
-- **No conversation memory**: Claude Chat remembers the conversation. The platform sends each chunk as a fresh API call.
-- **Vignette/TC generation is separate**: Card generation and vignette/TC generation are separate steps. The vignette/TC step only sees card fronts, NOT original source text.
-- **Rules are fixed per generation**: No conversational refinement. Edit the rules prompt or regenerate with guidance.
+### What's DIFFERENT:
+- **Chunking splits content**: Platform generates cards from ONE chunk at a time (with sibling context). Claude Chat sees everything at once.
+- **No conversation memory**: Each chunk is a fresh API call. No back-and-forth refinement mid-generation.
+- **Vignette/TC is a separate step**: Only sees card fronts, NOT original source text.
+- **Rules replace conversation**: No in-session refinement. Edit rules and regenerate.
 
-### What to tell the client:
-- The rules prompt is CRITICAL — it replaces the conversational guidance you give in Claude Chat
-- If output quality differs from Claude Chat, the rules probably need adjustment
-- Upload documents topic-by-topic for best results
-- Vignettes and teaching cases are SHARED per condition
-
-## SETTINGS & RULES
-
-### Settings (gear icon, top-right):
-- **Card Generation Model**: Default Sonnet
-- **Vignette + Teaching Case Model**: Default Sonnet
-- **Card Generation Rules**: Prompt template for cards
-- **Vignette + TC Rules**: Prompt template for supplemental
-- Chunking is fixed to Haiku
-
-### Rules (Library > Rules):
-- Two tabs: **Generation** and **Vignette + Teaching Case**
-- Create multiple rule sets, set one as default per type
-- Click a rule to edit inline. Create new with "+ New"
-
-## CURRICULUM & TOPICS
-
-- Hierarchical tree: Parent > Child > Leaf
-- Leaf topics = conditions = vignette/TC grouping
-- Edit mode: add, rename, delete topics
-- Reassign: re-run AI topic detection under a topic
-- Deleting a topic reassigns chunks to parent, removes tag from cards
-
-## DOCUMENT MANAGEMENT
-
-- Library > Documents: all docs with chunk/card counts
-- Workspace sidebar: select docs, browse chunks
-- Rename, delete documents
-
-## CARD REVIEW
-
-- Toggle optional columns: Ref Image, Vignette, Teaching Case
-- Double-click to edit cells inline
-- Ref images: toggle Front/Back per card
-- Ankify: full-screen preview with cloze reveal
-- Bulk: select cards → Generate Vignettes & Cases or Mark Reviewed
-
-## EXACT API PROMPT STRUCTURE
-
-### Card Generation prompt per chunk:
-```
-[Cached block]:
-{ANCHOR_INSTRUCTION}
-{USER'S GENERATION RULES}
 ---
 
-[Chunk block]:
-Now generate cards from the following study note content.
-Curriculum context: {topic_path}
-Section: {heading}
-Source text: {chunk_text}
---- RELATED CONTENT (context only) ---
-{sibling_chunks_text}
-Generate cards in format: number|cloze card text
-```
+## HOW TO ADAPT A CLAUDE CHAT PROMPT INTO PLATFORM RULES
 
-### Vignette + Teaching Case prompt per condition:
-```
-[Cached block]:
-{FORMATTING_INSTRUCTION}
-{USER'S VIGNETTE + TC RULES}
+If the user has a detailed prompt they use in Claude Chat and wants to use it in the platform, help them understand what to KEEP and what to REMOVE.
 
-[Cards block]:
-Condition: {leaf_topic_name}
-Cards: Card 1: {text}, Card 2: {text}, ...
-Generate vignette and teaching case.
-Output: ===VIGNETTE=== ... ===TEACHING_CASE=== ...
-```
+### REMOVE from rules (the platform handles these automatically):
+- Any instruction about output format markers or delimiters — the platform's internal prompt already handles this
+- Any preamble like "You will receive a set of cards for a condition" — already in the platform prompt
+- Any grouping or batching instruction ("generate one vignette per condition", "process all cards together") — handled automatically
+- Any instruction about what data the AI will receive — the platform injects that automatically
+- The pipe-delimited output format for card generation — already in the system; only keep CONTENT requirements
 
-Technical: prompt caching reduces cost ~90% for rules across chunks. 14 parallel workers process chunks/conditions simultaneously."""
+### KEEP in rules (what makes the output good):
+- **Content and style requirements**: what the vignette should include, how long, what sections
+- **Naming conventions**: e.g., "use alliterative patient names tied to the diagnosis"
+- **Structural requirements**: e.g., "include sections: Presentation, Workup, Treatment, Follow-Up, Board Pearls"
+- **Tone and scope**: e.g., "PA scope throughout, second person present tense"
+- **Specific clinical details**: what signs/symptoms to emphasize, how to present findings
+- **Card generation specifics**: how many cards per chunk, what to prioritize, what to avoid beyond the automatic anchor rule
+
+### HOW TO GUIDE THE USER:
+Tell them: paste the core content requirements from their Claude Chat prompt into the appropriate rules field (Generation or Vignette + Teaching Case in Library > Rules). Strip out format/structure instructions that describe HOW the platform works internally — keep only what describes WHAT the output should look like and HOW IT SHOULD READ.
+
+---
+
+## CURRICULUM
+
+- Hierarchical tree: Parent > Child > Leaf
+- Leaf topics = conditions = the unit for vignette/TC grouping
+- Edit mode (Library > Curriculum if available, or via the topic picker): add, rename, delete topics
+- Reassign: re-run AI topic detection under a topic after curriculum changes
+- Deleting a topic reassigns its chunks to the parent topic and removes its tag from cards
+
+---
+
+## TECHNICAL NOTES (for questions about how things work under the hood)
+
+- Prompt caching reduces cost ~90% for the rules block across chunks/conditions
+- 14 parallel workers process chunks and conditions simultaneously
+- note_id: Anki-compatible millisecond timestamp per card, used for deduplication on re-import
+- Chunking model is fixed to Haiku; generation models are configurable per session via Settings
+- CSV export includes: note_id, front_html, tags, extra, vignette, teaching_case, ref_img"""
 
 
 class ChatMessageRequest(BaseModel):
@@ -228,8 +297,52 @@ def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
         db.flush()
 
     # Add user message
-    messages = list(session.messages or [])
-    messages.append({"role": "user", "content": body.message})
+    history = list(session.messages or [])
+    history.append({"role": "user", "content": body.message})
+
+    # Build messages with prompt caching on the system documentation block.
+    # We inject the system prompt as a cached user content block prepended to the
+    # first user message, so it is cached across all turns in this session.
+    if len(history) == 1:
+        # First message — prepend cached system doc block
+        api_messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": SYSTEM_PROMPT,
+                        "cache_control": {"type": "ephemeral"},
+                    },
+                    {
+                        "type": "text",
+                        "text": body.message,
+                    },
+                ],
+            }
+        ]
+    else:
+        # Subsequent messages — history already has the first user turn stored as plain text.
+        # Rebuild: inject cached block on first user message, rest as-is.
+        api_messages = []
+        for i, msg in enumerate(history):
+            if i == 0 and msg["role"] == "user":
+                api_messages.append({
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": SYSTEM_PROMPT,
+                            "cache_control": {"type": "ephemeral"},
+                        },
+                        {
+                            "type": "text",
+                            "text": msg["content"] if isinstance(msg["content"], str) else msg["content"],
+                        },
+                    ],
+                })
+            else:
+                api_messages.append(msg)
 
     # Call Claude
     try:
@@ -237,22 +350,21 @@ def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            messages=messages,
+            messages=api_messages,
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
         reply = response.content[0].text
     except Exception as e:
         logger.exception("Chat failed")
         reply = f"Sorry, I encountered an error: {str(e)[:200]}"
 
-    # Add assistant reply
-    messages.append({"role": "assistant", "content": reply})
-    session.messages = messages
+    # Persist plain-text history (no cache_control blocks in DB)
+    history.append({"role": "assistant", "content": reply})
+    session.messages = history
     session.updated_at = utcnow()
 
     # Auto-name after first exchange
-    if len(messages) == 2 and session.name == "New chat":
-        # Use first ~50 chars of user message as name
+    if len(history) == 2 and session.name == "New chat":
         session.name = body.message[:50] + ("..." if len(body.message) > 50 else "")
 
     db.commit()
