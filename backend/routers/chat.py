@@ -284,6 +284,19 @@ def get_session(session_id: int, db: Session = Depends(get_db)):
 
 @router.post("/send")
 def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
+    import traceback as _tb
+    try:
+        return _send_message_inner(body, db)
+    except Exception as e:
+        logger.exception("send_message unhandled error")
+        return {
+            "content": f"[SERVER ERROR] {type(e).__name__}: {str(e)}\n\n{_tb.format_exc()[-800:]}",
+            "session_id": -1,
+            "session_name": "Error",
+        }
+
+
+def _send_message_inner(body: ChatMessageRequest, db: Session):
     from frontend_version import get_app_version
 
     # Get or create session
