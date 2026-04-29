@@ -113,6 +113,16 @@ class GenerationJob(Base):
     rule_set: Mapped["RuleSet"] = relationship("RuleSet")
 
 
+class ChatSession(Base):
+    __tablename__ = "chat_sessions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), default="New chat")
+    messages: Mapped[list] = mapped_column(JSON, default=list)
+    app_version: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class AIUsageLog(Base):
     __tablename__ = "ai_usage_log"
     id: Mapped[int] = mapped_column(primary_key=True)

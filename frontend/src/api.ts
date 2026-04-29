@@ -267,7 +267,46 @@ export async function getUsageSummary(): Promise<AIUsageSummary> {
 
 // ─── Chat ────────────────────────────────────────────────────────────────────
 
-export async function sendChatMessage(messages: { role: string; content: string }[]): Promise<string> {
-  const res = await http.post<{ content: string }>('/chat', { messages });
-  return res.data.content;
+export interface ChatSessionSummary {
+  id: number;
+  name: string;
+  app_version: number;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatSessionDetail {
+  id: number;
+  name: string;
+  messages: { role: string; content: string }[];
+  app_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getChatSessions(): Promise<ChatSessionSummary[]> {
+  const res = await http.get<ChatSessionSummary[]>('/chat/sessions');
+  return res.data;
+}
+
+export async function getChatSession(id: number): Promise<ChatSessionDetail> {
+  const res = await http.get<ChatSessionDetail>(`/chat/sessions/${id}`);
+  return res.data;
+}
+
+export async function deleteChatSession(id: number): Promise<void> {
+  await http.delete(`/chat/sessions/${id}`);
+}
+
+export async function sendChatMessage(message: string, sessionId?: number | null): Promise<{
+  content: string;
+  session_id: number;
+  session_name: string;
+}> {
+  const res = await http.post<{ content: string; session_id: number; session_name: string }>(
+    '/chat/send',
+    { message, session_id: sessionId ?? null }
+  );
+  return res.data;
 }
