@@ -9,6 +9,12 @@ from backend.db import get_db
 from backend.models import FeatureRequest, utcnow
 from backend.config import ANTHROPIC_API_KEY
 
+try:
+    from frontend_version import get_app_version
+except ImportError:
+    def get_app_version() -> int:
+        return 0
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -71,7 +77,6 @@ def list_requests(status: Optional[str] = None, db: Session = Depends(get_db)):
 
 @router.post("", status_code=201)
 def create_request(body: CreateRequest, db: Session = Depends(get_db)):
-    from frontend_version import get_app_version
     req = FeatureRequest(
         title=body.title,
         description=body.description,

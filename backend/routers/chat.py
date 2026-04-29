@@ -9,6 +9,12 @@ from backend.db import get_db
 from backend.models import ChatSession, utcnow
 from backend.config import ANTHROPIC_API_KEY
 
+try:
+    from frontend_version import get_app_version
+except ImportError:
+    def get_app_version() -> int:
+        return 0
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -250,7 +256,6 @@ def list_sessions(db: Session = Depends(get_db)):
 
 @router.post("/sessions", status_code=201)
 def create_session(body: ChatSessionCreate, db: Session = Depends(get_db)):
-    from frontend_version import get_app_version
     session = ChatSession(name=body.name, messages=[], app_version=get_app_version())
     db.add(session)
     db.commit()
@@ -297,8 +302,6 @@ def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
 
 
 def _send_message_inner(body: ChatMessageRequest, db: Session):
-    from frontend_version import get_app_version
-
     # Get or create session
     if body.session_id:
         session = db.get(ChatSession, body.session_id)
