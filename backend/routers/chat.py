@@ -364,9 +364,11 @@ def _send_message_inner(body: ChatMessageRequest, db: Session):
     # Call Claude (cached documentation + live rules)
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        # Two cache breakpoints: docs cached first, then docs+rules cached together.
+        # On subsequent turns both are served from cache — zero token cost for the context.
         system_blocks = [
             {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
-            {"type": "text", "text": rules_block},
+            {"type": "text", "text": rules_block, "cache_control": {"type": "ephemeral"}},
         ]
         try:
             response = client.messages.create(
