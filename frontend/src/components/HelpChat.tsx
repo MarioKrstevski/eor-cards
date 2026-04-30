@@ -419,7 +419,9 @@ export default function HelpChat() {
                             .replace(/\{\{c\d+::([^}]+)\}\}/g, '<mark style="background:#dbeafe;color:#1d4ed8;padding:0 2px;border-radius:2px">$1</mark>')
                         }}
                       />
-                      {card.extra && <div className="text-gray-400 italic border-t border-gray-100 pt-1">{card.extra}</div>}
+                      {card.extra && <div className="text-gray-400 italic border-t border-gray-100 pt-1"><span className="font-semibold not-italic">Extra:</span> {card.extra}</div>}
+                      {card.vignette && <div className="text-gray-400 border-t border-gray-100 pt-1"><span className="font-semibold">Vignette:</span> {card.vignette}</div>}
+                      {card.teaching_case && <div className="text-gray-400 border-t border-gray-100 pt-1"><span className="font-semibold">Teaching case:</span> {card.teaching_case}</div>}
                     </div>
                   ))}
                 </div>
