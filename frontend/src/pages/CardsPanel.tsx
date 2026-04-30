@@ -539,12 +539,14 @@ function TagsCell({ tags, cellId, onSelect, onSave, onNavigate }: TagsCellProps)
 
 // ── Column definitions for visibility toggle ───────────────────────────────────
 const OPTIONAL_COLUMNS = [
+  { id: 'extra', label: 'Extra / Additional Context' },
   { id: 'ref_img', label: 'Ref Image' },
   { id: 'vignette', label: 'Vignette' },
   { id: 'teaching_case', label: 'Teaching Case' },
 ] as const;
 
 const DEFAULT_COLUMN_VISIBILITY: VisibilityState = {
+  extra: false,
   ref_img: false,
   vignette: false,
   teaching_case: false,
@@ -835,7 +837,7 @@ export default function CardsPanel({
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save tags'); }
   }, []);
 
-  const saveFieldInline = useCallback(async (id: number, field: 'vignette' | 'teaching_case', val: string) => {
+  const saveFieldInline = useCallback(async (id: number, field: 'extra' | 'vignette' | 'teaching_case', val: string) => {
     setActionError(null);
     try {
       const updated = await updateCard(id, { [field]: val });
@@ -863,6 +865,7 @@ export default function CardsPanel({
   // ── Cell keyboard navigation ───────────────────────────────────────────────
   const handleCellNavigate = useCallback((rowIndex: number, colId: string, dir: 'up' | 'down' | 'left' | 'right', totalPageRows: number) => {
     const navigableCols = ['front_text', 'tags'];
+    if (columnVisibility['extra'] !== false) navigableCols.push('extra');
     if (columnVisibility['vignette'] !== false) navigableCols.push('vignette');
     if (columnVisibility['teaching_case'] !== false) navigableCols.push('teaching_case');
 
@@ -1285,6 +1288,33 @@ export default function CardsPanel({
                 </div>
               )}
             </div>
+          );
+        },
+      }),
+      columnHelper.accessor('extra', {
+        id: 'extra',
+        header: 'Extra',
+        size: 300,
+        minSize: 150,
+        cell: (info) => {
+          const card = info.row.original;
+          const rowIndex = info.row.index;
+          const totalPageRows = info.table.getRowModel().rows.length;
+          return (
+            <EditableCell
+              value={card.extra ?? ''}
+              cellId={`${rowIndex}:extra`}
+              onSelect={handleCellSelect}
+              onSave={(v) => saveFieldInline(card.id, 'extra', v)}
+              onNavigate={(dir) => handleCellNavigate(rowIndex, 'extra', dir, totalPageRows)}
+              multiline
+              clampLines={4}
+              renderDisplay={(v) =>
+                v
+                  ? <div className="text-sm text-gray-800 leading-relaxed whitespace-normal break-words" dangerouslySetInnerHTML={{ __html: v }} />
+                  : <span className="text-gray-300 text-xs">—</span>
+              }
+            />
           );
         },
       }),
