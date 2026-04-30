@@ -9,8 +9,21 @@ The anchor is usually the disease, condition, or concept name. \
 NEVER cloze the anchor — it must remain readable so the student knows what \
 they are studying and can recall the associated facts.
 
-FORMATTING RULE: Output plain text only. Do NOT use markdown formatting (no **, no *, no #, no backticks). \
-If you need emphasis, use HTML tags like <b> or <span> with inline styles. The output format is: number|card text"""
+CLOZE VS BOLD DECISION RULE:
+- CLOZE ({{cN::term}}) = any independently testable clinical element: anatomical structures, \
+physiological terms, condition modifiers, dysfunction types, drug names, lab values, time frames, \
+mechanisms, findings. If a student could be tested on recalling it, it must be clozed.
+- <b>bold HTML tag</b> = ONLY for structural orientation labels (section headers within a card) \
+and explicit emphasis qualifiers already present in the source text. \
+NEVER use bold as a substitute for clozing. If a term qualifies for both, it should be CLOZED, not bolded.
+
+FORMATTING RULE — ABSOLUTE: Output plain text only. \
+NEVER use markdown formatting. \
+** characters are FORBIDDEN — outputting **term** is a formatting error. \
+* characters are FORBIDDEN for emphasis. \
+No #, no backticks, no markdown of any kind. \
+For any emphasis, use only HTML tags: <b>term</b>. \
+The output format is: number|card text"""
 
 
 def strip_card_html(card_text: str) -> str:
@@ -22,6 +35,11 @@ def strip_card_html(card_text: str) -> str:
 def extract_cloze_terms(card_text: str) -> list[str]:
     """Extract cloze deletion terms from card HTML."""
     return re.findall(r'\{\{c\d+::([^}]+)\}\}', card_text)
+
+
+def fix_markdown_bold(text: str) -> str:
+    """Convert any **term** markdown bold to <b>term</b> HTML bold."""
+    return re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
 
 
 def parse_card_output(raw: str) -> tuple[list[dict], bool]:
@@ -41,7 +59,7 @@ def parse_card_output(raw: str) -> tuple[list[dict], bool]:
             continue
         match = re.match(r'^(\d+)\|(.+)$', line)
         if match:
-            card_text = match.group(2).strip()
+            card_text = fix_markdown_bold(match.group(2).strip())
             cards.append({
                 "card_number": int(match.group(1)),
                 "front_html": card_text,
