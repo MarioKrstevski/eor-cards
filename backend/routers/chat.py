@@ -6,8 +6,9 @@ from pydantic import BaseModel
 from typing import Optional
 import anthropic
 from backend.db import get_db
-from backend.models import ChatSession, utcnow
+from backend.models import ChatSession, RuleSet, utcnow
 from backend.config import ANTHROPIC_API_KEY
+from backend.services.generator import ANCHOR_INSTRUCTION
 
 try:
     from frontend_version import get_app_version
@@ -31,6 +32,7 @@ IMPORTANT RULES:
 3. If the question is about HOW TO USE existing features, just answer it directly.
 4. Use examples when helpful. Keep answers focused.
 5. Only use terminology that exists in the platform (vignette, teaching case, cards, chunks, rules, curriculum). If the user references unfamiliar terms or numbering systems, ask them what they mean.
+6. You have access to the CURRENT ACTIVE RULES (appended below the documentation). Use them when the user asks why output looks a certain way, or to spot issues in the rules. Quote the relevant rule when explaining.
 
 ---
 
@@ -301,6 +303,32 @@ def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
         }
 
 
+def _build_rules_block(db: Session) -> str:
+    """Fetch the current default rules from DB and build a context string for the chat."""
+    gen_rule = db.query(RuleSet).filter_by(rule_type="generation", is_default=True).first()
+    vig_rule = db.query(RuleSet).filter_by(rule_type="vignette", is_default=True).first()
+
+    gen_text = gen_rule.content if gen_rule else "(no default generation rule set)"
+    vig_text = vig_rule.content if vig_rule else "(no default vignette + teaching case rule set)"
+
+    return f"""---
+
+## CURRENT ACTIVE RULES (live — fetched from the database)
+
+These are the exact prompts being used right now when generating cards and vignettes/teaching cases. Use them to explain why output looks the way it does, spot issues, and help the user improve them.
+
+### Card Generation Rules (default rule set: "{gen_rule.name if gen_rule else 'none'}"):
+{gen_text}
+
+### Vignette + Teaching Case Rules (default rule set: "{vig_rule.name if vig_rule else 'none'}"):
+{vig_text}
+
+### Hardcoded Anchor Instruction (always injected before Generation Rules, not editable by user):
+{ANCHOR_INSTRUCTION}
+
+Note: the anchor instruction is hardcoded — it cannot be changed via the Rules editor. It ensures the condition/disease name is never cloze-deleted."""
+
+
 def _send_message_inner(body: ChatMessageRequest, db: Session):
     # Get or create session
     if body.session_id:
@@ -316,14 +344,21 @@ def _send_message_inner(body: ChatMessageRequest, db: Session):
     history = list(session.messages or [])
     history.append({"role": "user", "content": body.message})
 
-    # Call Claude (with prompt caching on system block, fallback to plain if unsupported)
+    # Build live rules context block
+    rules_block = _build_rules_block(db)
+
+    # Call Claude (cached documentation + live rules)
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        system_blocks = [
+            {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": rules_block},
+        ]
         try:
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=1024,
-                system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+                system=system_blocks,
                 messages=history,
                 extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
             )
@@ -332,7 +367,7 @@ def _send_message_inner(body: ChatMessageRequest, db: Session):
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=1024,
-                system=SYSTEM_PROMPT,
+                system=SYSTEM_PROMPT + "\n\n" + rules_block,
                 messages=history,
             )
         reply = response.content[0].text

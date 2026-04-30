@@ -1538,6 +1538,24 @@ export default function CardsPanel({
 
             {selectedIds.size > 0 && (
               <button
+                onClick={() => {
+                  const selected = cards.filter(c => selectedIds.has(c.id));
+                  const cardList = selected.map((c, i) => `${i + 1}. ${c.front_text || c.front_html}`).join('\n');
+                  window.dispatchEvent(new CustomEvent('discuss-cards', {
+                    detail: { message: `Here are the cards I want to discuss:\n\n${cardList}\n\nPlease review them against the current rules and explain what's controlling how they were generated.` }
+                  }));
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors duration-150"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                Discuss in Chat ({selectedIds.size})
+              </button>
+            )}
+
+            {selectedIds.size > 0 && (
+              <button
                 onClick={handleBulkDelete}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors duration-150"
               >

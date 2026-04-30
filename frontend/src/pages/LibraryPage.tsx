@@ -1033,6 +1033,16 @@ export default function LibraryPage() {
                     >
                       Set as Default
                     </button>
+                    <button
+                      onClick={() => {
+                        const ruleType = ruleSubTab === 'generation' ? 'Card Generation' : 'Vignette + Teaching Case';
+                        const message = `Please analyze my ${ruleType} rules and tell me if there are any issues or things I should remove or improve. Here are the rules:\n\n${editContent}`;
+                        window.dispatchEvent(new CustomEvent('discuss-cards', { detail: { message } }));
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-purple-700 border border-purple-200 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors"
+                    >
+                      Analyze with Chat
+                    </button>
                   </div>
                 </div>
               )}

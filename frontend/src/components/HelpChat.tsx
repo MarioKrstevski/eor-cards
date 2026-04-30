@@ -35,6 +35,36 @@ export default function HelpChat() {
     if (open) inputRef.current?.focus();
   }, [open, view]);
 
+  useEffect(() => {
+    async function handleDiscussCards(e: Event) {
+      const { message } = (e as CustomEvent).detail;
+      // Open chat in a fresh session
+      setOpen(true);
+      setView('chat');
+      setSessionId(null);
+      setSessionName('New chat');
+      setRequestAdded(null);
+      setInput('');
+
+      // Add user message immediately and send
+      const userMsg = { role: 'user', content: message };
+      setMessages([userMsg]);
+      setLoading(true);
+      try {
+        const resp = await sendChatMessage(message, null);
+        setMessages([userMsg, { role: 'assistant', content: resp.content }]);
+        setSessionId(resp.session_id);
+        setSessionName(resp.session_name);
+      } catch {
+        setMessages([userMsg, { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }]);
+      } finally {
+        setLoading(false);
+      }
+    }
+    window.addEventListener('discuss-cards', handleDiscussCards);
+    return () => window.removeEventListener('discuss-cards', handleDiscussCards);
+  }, []);
+
   async function loadSessions() {
     setSessionsLoading(true);
     try {
