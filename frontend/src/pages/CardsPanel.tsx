@@ -665,8 +665,8 @@ export default function CardsPanel({
 
   // ── Fetch cards ────────────────────────────────────────────────────────────
   const fetchCards = useCallback(
-    async (docId: number | null, topicPathFilter?: string | null, chunk?: number | null) => {
-      setCardsLoading(true);
+    async (docId: number | null, topicPathFilter?: string | null, chunk?: number | null, silent?: boolean) => {
+      if (!silent) setCardsLoading(true);
       try {
         let rawCards: Card[];
         if (docId != null) {
@@ -683,7 +683,7 @@ export default function CardsPanel({
       } catch {
         // silently fail
       } finally {
-        setCardsLoading(false);
+        if (!silent) setCardsLoading(false);
       }
     },
     []
@@ -765,7 +765,7 @@ export default function CardsPanel({
           if (job.status === 'done') {
             clearInterval(intervalRef.current!); intervalRef.current = null;
             setJobRunning(false);
-            fetchCards(documentIdRef.current!, null, null);
+            fetchCards(documentIdRef.current!, null, null, true);
             refreshUsage?.();
           } else if (job.status === 'failed') {
             clearInterval(intervalRef.current!); intervalRef.current = null;
@@ -920,14 +920,14 @@ export default function CardsPanel({
   const handleRegen = useCallback(async (id: number, prompt?: string) => {
     setRegenLoading(true); setActionError(null);
     try {
-      await regenerateCard(id, { model: selectedModel, prompt: (prompt ?? regenPrompt) || undefined });
+      const updated = await regenerateCard(id, { model: selectedModel, prompt: (prompt ?? regenPrompt) || undefined });
       setRegenId(null); setRegenPrompt('');
-      if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-      else if (topicPath) fetchCards(null, topicPath);
+      // Update the card in-place — no full reload, no flicker
+      setCards(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
       refreshUsage?.();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Regeneration failed'); }
     finally { setRegenLoading(false); }
-  }, [documentId, chunkId, topicPath, selectedModel, regenPrompt, fetchCards]);
+  }, [selectedModel, regenPrompt]);
 
   const unreviewedSelectedIds = useMemo(
     () => cards.filter(c => selectedIds.has(c.id) && c.status === 'active' && !c.is_reviewed).map(c => c.id),
@@ -964,8 +964,8 @@ export default function CardsPanel({
         if (job.status === 'done' || job.status === 'failed') {
           clearInterval(interval);
           setSupplementalJobId(null);
-          if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-          else if (topicPath) fetchCards(null, topicPath);
+          if (documentId != null) fetchCards(documentId, null, chunkId ?? null, true);
+          else if (topicPath) fetchCards(null, topicPath, null, true);
           refreshUsage?.();
           if (job.status === 'failed') {
             setJobAlertError(job.error_message ?? 'Supplemental generation failed');
