@@ -1452,148 +1452,168 @@ export default function CardsPanel({
         )}
 
         {/* ── Card grid toolbar ── */}
-        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-200 shrink-0 bg-white flex-wrap">
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* View mode toggle */}
-            <div className="flex items-center gap-0.5 rounded-lg bg-gray-100/80 p-0.5">
-              <button onClick={() => setViewMode('table')} title="Table view" className={`p-1.5 rounded-md transition-colors duration-150 ${viewMode === 'table' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M10 4v16M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
-                </svg>
-              </button>
-              <button onClick={() => setViewMode('cards')} title="Card view" className={`p-1.5 rounded-md transition-colors duration-150 ${viewMode === 'cards' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <rect x="3" y="3" width="8" height="8" rx="1" /><rect x="13" y="3" width="8" height="8" rx="1" />
-                  <rect x="3" y="13" width="8" height="8" rx="1" /><rect x="13" y="13" width="8" height="8" rx="1" />
-                </svg>
-              </button>
-            </div>
+        <div className="flex flex-col border-b border-gray-200 shrink-0 bg-white">
 
-            {/* Column visibility toggle — table view only */}
-            {viewMode === 'table' && (
-              <div className="relative">
-                <button
-                  onClick={() => setColVisPopover(v => !v)}
-                  className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors duration-150 ${colVisPopover ? 'bg-gray-100 text-gray-700 border-gray-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-                >
+          {/* Row 1: view controls + filters + export */}
+          <div className="flex items-center justify-between gap-3 px-5 py-2.5 flex-wrap">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* View mode toggle */}
+              <div className="flex items-center gap-0.5 rounded-lg bg-gray-100/80 p-0.5">
+                <button onClick={() => setViewMode('table')} title="Table view" className={`p-1.5 rounded-md transition-colors duration-150 ${viewMode === 'table' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M10 4v16M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
                   </svg>
-                  Columns
                 </button>
-                {colVisPopover && (
-                  <>
-                    <div className="fixed inset-0 z-10" onClick={() => setColVisPopover(false)} />
-                    <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-xl p-3 min-w-[190px]">
-                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">Optional columns</p>
-                      {OPTIONAL_COLUMNS.map(col => (
-                        <label key={col.id} className="flex items-center gap-2 py-1 px-1 cursor-pointer hover:bg-gray-50 rounded-lg">
-                          <input
-                            type="checkbox"
-                            checked={columnVisibility[col.id] !== false}
-                            onChange={e => toggleColumn(col.id, e.target.checked)}
-                            className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
-                          />
-                          <span className="text-xs text-gray-700">{col.label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </>
+                <button onClick={() => setViewMode('cards')} title="Card view" className={`p-1.5 rounded-md transition-colors duration-150 ${viewMode === 'cards' ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <rect x="3" y="3" width="8" height="8" rx="1" /><rect x="13" y="3" width="8" height="8" rx="1" />
+                    <rect x="3" y="13" width="8" height="8" rx="1" /><rect x="13" y="13" width="8" height="8" rx="1" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* Column visibility toggle — table view only */}
+              {viewMode === 'table' && (
+                <div className="relative">
+                  <button
+                    onClick={() => setColVisPopover(v => !v)}
+                    className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors duration-150 ${colVisPopover ? 'bg-gray-100 text-gray-700 border-gray-300' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                    </svg>
+                    Columns
+                  </button>
+                  {colVisPopover && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setColVisPopover(false)} />
+                      <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-xl p-3 min-w-[190px]">
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2 px-1">Optional columns</p>
+                        {OPTIONAL_COLUMNS.map(col => (
+                          <label key={col.id} className="flex items-center gap-2 py-1 px-1 cursor-pointer hover:bg-gray-50 rounded-lg">
+                            <input
+                              type="checkbox"
+                              checked={columnVisibility[col.id] !== false}
+                              onChange={e => toggleColumn(col.id, e.target.checked)}
+                              className="rounded border-gray-300 text-blue-700 focus:ring-blue-500"
+                            />
+                            <span className="text-xs text-gray-700">{col.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Anki format toggle */}
+              {viewMode === 'table' && (
+                <button
+                  onClick={() => setShowAnkiFormat(v => !v)}
+                  title={showAnkiFormat ? 'Switch to plain text' : 'Switch to Anki cloze view'}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors duration-150 ${showAnkiFormat ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                >
+                  {showAnkiFormat ? 'Anki' : 'Text'}
+                </button>
+              )}
+
+              {/* Unreviewed only */}
+              <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none font-medium">
+                <input type="checkbox" checked={unreviewedOnly} onChange={e => setUnreviewedOnly(e.target.checked)} className="rounded border-gray-300 text-blue-700 focus:ring-blue-500" />
+                Unreviewed only
+              </label>
+
+              {/* Status filter */}
+              <select className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-600 font-medium focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors duration-150" value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | CardStatus)}>
+                <option value="all">All status</option>
+                <option value="active">Active</option>
+                <option value="rejected">Rejected</option>
+              </select>
+
+              {/* Search */}
+              <div className="relative">
+                <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent w-44 transition-colors duration-150" placeholder="Search cards..." value={searchQ} onChange={e => setSearchQ(e.target.value)} />
+                {searchQ && (
+                  <button onClick={() => setSearchQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
                 )}
               </div>
-            )}
 
-            {/* Ankify */}
-            {selectedIds.size > 0 && (
+              <span className="text-xs text-gray-400 tabular-nums font-medium">{filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}</span>
+            </div>
+
+            {/* Export */}
+            <button
+              onClick={() => window.open(documentId != null ? exportCardsUrl({ document_id: documentId }) : exportCardsUrl())}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-600"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export
+            </button>
+          </div>
+
+          {/* Row 2: selection actions — only shown when cards are selected */}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 px-5 py-2 bg-blue-50/60 border-t border-blue-100 flex-wrap">
+              <span className="text-[11px] font-semibold text-blue-600 mr-1">{selectedIds.size} selected</span>
+
+              {/* Ankify */}
               <button onClick={() => setAnkifyOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg border bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100 transition-colors duration-150" title="Review cards Anki-style">
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
                 Ankify
               </button>
-            )}
 
-            {/* Anki format toggle */}
-            {viewMode === 'table' && (
-              <button
-                onClick={() => setShowAnkiFormat(v => !v)}
-                title={showAnkiFormat ? 'Switch to plain text' : 'Switch to Anki cloze view'}
-                className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors duration-150 ${showAnkiFormat ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-              >
-                {showAnkiFormat ? 'Anki' : 'Text'}
-              </button>
-            )}
-
-            {/* Unreviewed only */}
-            <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none font-medium">
-              <input type="checkbox" checked={unreviewedOnly} onChange={e => setUnreviewedOnly(e.target.checked)} className="rounded border-gray-300 text-blue-700 focus:ring-blue-500" />
-              Unreviewed only
-            </label>
-
-            {/* Status filter */}
-            <select className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-600 font-medium focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-colors duration-150" value={statusFilter} onChange={e => setStatusFilter(e.target.value as 'all' | CardStatus)}>
-              <option value="all">All status</option>
-              <option value="active">Active</option>
-              <option value="rejected">Rejected</option>
-            </select>
-
-            {/* Search */}
-            <div className="relative">
-              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg bg-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent w-44 transition-colors duration-150" placeholder="Search cards..." value={searchQ} onChange={e => setSearchQ(e.target.value)} />
-              {searchQ && (
-                <button onClick={() => setSearchQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              {/* Mark reviewed */}
+              {unreviewedSelectedIds.length > 0 && (
+                <button onClick={handleBulkReview} className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors duration-150">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Mark {unreviewedSelectedIds.length} reviewed
                 </button>
               )}
-            </div>
 
-            <span className="text-xs text-gray-400 tabular-nums font-medium">{filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}</span>
+              {/* Vignette + Teaching Case generation */}
+              {(() => {
+                const selCards = cards.filter(c => selectedIds.has(c.id));
+                const needsGen = selCards.filter(c => !c.vignette || !c.teaching_case);
+                const hasGen = selCards.filter(c => c.vignette && c.teaching_case);
+                return (
+                  <>
+                    {needsGen.length > 0 && (
+                      <button
+                        disabled={supplementalEstimating || !!supplementalJobId}
+                        onClick={() => handleSupplementalClick(false, needsGen.map(c => c.id))}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+                      >
+                        Gen Vignettes &amp; Cases ({needsGen.length})
+                      </button>
+                    )}
+                    {hasGen.length > 0 && (
+                      <button
+                        disabled={supplementalEstimating || !!supplementalJobId}
+                        onClick={() => handleSupplementalClick(true, hasGen.map(c => c.id))}
+                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
+                      >
+                        Regen Vignettes ({hasGen.length})
+                      </button>
+                    )}
+                    {supplementalJobId && (
+                      <span className="text-xs text-gray-500 font-medium animate-pulse">Generating...</span>
+                    )}
+                  </>
+                );
+              })()}
 
-            {unreviewedSelectedIds.length > 0 && (
-              <button onClick={handleBulkReview} className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors duration-150">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                Mark {unreviewedSelectedIds.length} reviewed
-              </button>
-            )}
-
-            {/* ── Vignette + Teaching Case generation buttons ── */}
-            {(() => {
-              const selCards = cards.filter(c => selectedIds.has(c.id));
-              const needsGen = selCards.filter(c => !c.vignette || !c.teaching_case);
-              const hasGen = selCards.filter(c => c.vignette && c.teaching_case);
-              return (
-                <>
-                  {needsGen.length > 0 && (
-                    <button
-                      disabled={supplementalEstimating || !!supplementalJobId}
-                      onClick={() => handleSupplementalClick(false, needsGen.map(c => c.id))}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
-                    >
-                      Generate Vignettes &amp; Cases ({needsGen.length})
-                    </button>
-                  )}
-                  {hasGen.length > 0 && (
-                    <button
-                      disabled={supplementalEstimating || !!supplementalJobId}
-                      onClick={() => handleSupplementalClick(true, hasGen.map(c => c.id))}
-                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150"
-                    >
-                      Regenerate ({hasGen.length})
-                    </button>
-                  )}
-                  {supplementalJobId && (
-                    <span className="text-xs text-gray-500 font-medium animate-pulse">Generating...</span>
-                  )}
-                </>
-              );
-            })()}
-
-            {selectedIds.size > 0 && (
+              {/* Discuss in Chat */}
               <button
                 onClick={() => {
                   const selected = cards.filter(c => selectedIds.has(c.id));
@@ -1611,11 +1631,10 @@ export default function CardsPanel({
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                 </svg>
-                Discuss in Chat ({selectedIds.size})
+                Discuss in Chat
               </button>
-            )}
 
-            {selectedIds.size > 0 && (
+              {/* Delete */}
               <button
                 onClick={handleBulkDelete}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors duration-150"
@@ -1625,19 +1644,8 @@ export default function CardsPanel({
                 </svg>
                 Delete {selectedIds.size}
               </button>
-            )}
-          </div>
-
-          {/* Export */}
-          <button
-            onClick={() => window.open(documentId != null ? exportCardsUrl({ document_id: documentId }) : exportCardsUrl())}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-blue-600"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Export
-          </button>
+            </div>
+          )}
         </div>
 
         {/* Action error banner */}
