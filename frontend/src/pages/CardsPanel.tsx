@@ -589,6 +589,12 @@ export default function CardsPanel({
   // ── Card list state ────────────────────────────────────────────────────────
   const [cards, setCards] = useState<Card[]>([]);
   const [cardsLoading, setCardsLoading] = useState(false);
+  const allDocCardsRef = useRef<{ docId: number; cards: Card[] } | null>(null);
+
+  // Invalidate the document cache when cards are mutated so the next chunk switch refetches
+  const invalidateDocCache = useCallback(() => {
+    allDocCardsRef.current = null;
+  }, []);
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: 50 });
@@ -670,9 +676,19 @@ export default function CardsPanel({
       try {
         let rawCards: Card[];
         if (docId != null) {
-          rawCards = await getCards(
-            chunk != null ? { document_id: docId, chunk_id: chunk } : { document_id: docId }
-          );
+          // If we already have all cards for this document, filter client-side
+          if (chunk != null && allDocCardsRef.current?.docId === docId && allDocCardsRef.current.cards.length > 0) {
+            rawCards = allDocCardsRef.current.cards.filter(c => c.chunk_id === chunk);
+            setCards(rawCards);
+            if (!silent) setCardsLoading(false);
+            return;
+          }
+          rawCards = await getCards({ document_id: docId });
+          // Cache the full doc set
+          allDocCardsRef.current = { docId, cards: rawCards };
+          if (chunk != null) {
+            rawCards = rawCards.filter(c => c.chunk_id === chunk);
+          }
         } else if (topicPathFilter) {
           rawCards = await getCards();
           rawCards = rawCards.filter(c => c.topic_path && c.topic_path.startsWith(topicPathFilter));
@@ -690,25 +706,35 @@ export default function CardsPanel({
   );
 
   // ── Reset state when props change ─────────────────────────────────────────
+  const prevDocIdRef = useRef(documentId);
   useEffect(() => {
+    const docChanged = documentId !== prevDocIdRef.current;
+    prevDocIdRef.current = documentId;
+
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
-    setCards([]);
     setEstimate(null);
     setEstimateError(null);
     setJobRunning(false);
     setJobProgress(null);
     setJobError(null);
     setEditingId(null);
-    // Clear DOM selection
     if (selectedTdRef.current) { selectedTdRef.current.style.boxShadow = ''; selectedTdRef.current = null; }
-    setUnreviewedOnly(false);
     setSelectedIds(new Set());
-    setStatusFilter('all');
-    setSearchQ('');
     setActionError(null);
-    setViewMode('table');
-    if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-    else if (topicPath) fetchCards(null, topicPath);
+
+    if (docChanged || !documentId) {
+      // Full reset when switching documents or going to topic view
+      setCards([]);
+      setUnreviewedOnly(false);
+      setStatusFilter('all');
+      setSearchQ('');
+      setViewMode('table');
+      if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
+      else if (topicPath) fetchCards(null, topicPath);
+    } else {
+      // Same document, chunk changed — filter client-side if cached
+      fetchCards(documentId, null, chunkId ?? null);
+    }
   }, [documentId, chunkId, topicPath, fetchCards]);
 
   // ── Re-fetch on external refresh trigger ──────────────────────────────────
@@ -765,6 +791,7 @@ export default function CardsPanel({
           if (job.status === 'done') {
             clearInterval(intervalRef.current!); intervalRef.current = null;
             setJobRunning(false);
+            invalidateDocCache();
             fetchCards(documentIdRef.current!, null, null, true);
             refreshUsage?.();
           } else if (job.status === 'failed') {
@@ -805,8 +832,9 @@ export default function CardsPanel({
     try {
       await deleteCard(id);
       setCards(prev => prev.filter(c => c.id !== id));
+      invalidateDocCache();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to delete card'); }
-  }, []);
+  }, [invalidateDocCache]);
 
   // ── Tile-view edit handlers ────────────────────────────────────────────────
   const startEdit = useCallback((card: Card) => {
@@ -836,24 +864,27 @@ export default function CardsPanel({
     try {
       const updated = await updateCard(id, { front_html: val });
       setCards(prev => prev.map(c => c.id === id ? { ...c, front_html: updated.front_html, front_text: updated.front_text } : c));
+      invalidateDocCache();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
-  }, []);
+  }, [invalidateDocCache]);
 
   const saveTagsInline = useCallback(async (id: number, tags: string[]) => {
     setActionError(null);
     try {
       const updated = await updateCard(id, { tags });
       setCards(prev => prev.map(c => c.id === id ? { ...c, tags: updated.tags } : c));
+      invalidateDocCache();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save tags'); }
-  }, []);
+  }, [invalidateDocCache]);
 
   const saveFieldInline = useCallback(async (id: number, field: 'extra' | 'vignette' | 'teaching_case', val: string) => {
     setActionError(null);
     try {
       const updated = await updateCard(id, { [field]: val });
       setCards(prev => prev.map(c => c.id === id ? { ...c, [field]: updated[field as keyof typeof updated] } : c));
+      invalidateDocCache();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
-  }, []);
+  }, [invalidateDocCache]);
 
   // ── Cell selection: apply box-shadow to <td> directly, no React state ────
   const handleCellSelect = useCallback((cellId: string) => {
@@ -924,10 +955,11 @@ export default function CardsPanel({
       setRegenId(null); setRegenPrompt('');
       // Update the card in-place — no full reload, no flicker
       setCards(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
+      invalidateDocCache();
       refreshUsage?.();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Regeneration failed'); }
     finally { setRegenLoading(false); }
-  }, [selectedModel, regenPrompt]);
+  }, [selectedModel, regenPrompt, invalidateDocCache]);
 
   const unreviewedSelectedIds = useMemo(
     () => cards.filter(c => selectedIds.has(c.id) && c.status === 'active' && !c.is_reviewed).map(c => c.id),
@@ -952,6 +984,7 @@ export default function CardsPanel({
       await bulkDeleteCards(ids);
       setSelectedIds(new Set());
       setCards(prev => prev.filter(c => !ids.includes(c.id)));
+      invalidateDocCache();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to delete cards'); }
   }, [selectedIds]);
 
@@ -964,6 +997,7 @@ export default function CardsPanel({
         if (job.status === 'done' || job.status === 'failed') {
           clearInterval(interval);
           setSupplementalJobId(null);
+          invalidateDocCache();
           if (documentId != null) fetchCards(documentId, null, chunkId ?? null, true);
           else if (topicPath) fetchCards(null, topicPath, null, true);
           refreshUsage?.();
