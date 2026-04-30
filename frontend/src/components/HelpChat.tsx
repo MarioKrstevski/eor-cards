@@ -23,6 +23,8 @@ export default function HelpChat() {
   const [loading, setLoading] = useState(false);
   const [requestAdded, setRequestAdded] = useState<number | null>(null);
   const [pendingContext, setPendingContext] = useState<string | null>(null);
+  const [pendingCards, setPendingCards] = useState<any[] | null>(null);
+  const [showContextDetail, setShowContextDetail] = useState(false);
 
   // Session list
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
@@ -58,6 +60,8 @@ export default function HelpChat() {
       setRequestAdded(null);
       setInput('');
       setPendingContext(message);
+      setPendingCards((e as CustomEvent).detail.cards || null);
+      setShowContextDetail(false);
       setTimeout(() => inputRef.current?.focus(), 50);
     }
     window.addEventListener('discuss-cards', handleDiscussCards);
@@ -127,6 +131,7 @@ export default function HelpChat() {
     // If there's pending context (from Discuss in Chat), prepend it to the first message
     const fullMessage = pendingContext ? `${pendingContext}\n\n---\n\n${text}` : text;
     setPendingContext(null);
+    setPendingCards(null);
 
     setMessages(prev => [...prev, { role: 'user', content: text }]);
     setInput('');
@@ -374,14 +379,51 @@ export default function HelpChat() {
 
           {/* Pending context banner */}
           {pendingContext && (
-            <div className="mx-3 mb-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg flex items-start gap-2 shrink-0">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mt-0.5 shrink-0">Context loaded</span>
-              <span className="text-[11px] text-gray-500 truncate flex-1">{pendingContext.slice(0, 120)}{pendingContext.length > 120 ? '…' : ''}</span>
-              <button onClick={() => setPendingContext(null)} className="text-gray-300 hover:text-gray-500 shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+            <div className="mx-3 mb-1 shrink-0">
+              <div className="px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2">
+                <span className="text-[10px] font-semibold text-blue-500 uppercase tracking-wide shrink-0">Context loaded</span>
+                <span className="text-[11px] text-blue-400 truncate flex-1">
+                  {pendingCards ? `${pendingCards.length} card${pendingCards.length !== 1 ? 's' : ''}` : 'message context'}
+                </span>
+                {pendingCards && (
+                  <button
+                    onClick={() => setShowContextDetail(v => !v)}
+                    className={`p-0.5 rounded transition-colors shrink-0 ${showContextDetail ? 'text-blue-600' : 'text-blue-300 hover:text-blue-500'}`}
+                    title="View card details"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+                )}
+                <button onClick={() => { setPendingContext(null); setPendingCards(null); setShowContextDetail(false); }} className="text-blue-200 hover:text-blue-400 shrink-0">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              {showContextDetail && pendingCards && (
+                <div className="mt-1 border border-blue-100 rounded-lg bg-white overflow-y-auto max-h-52 text-[11px] divide-y divide-gray-100">
+                  {pendingCards.map((card) => (
+                    <div key={card.index} className="px-3 py-2 space-y-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-semibold text-gray-400">Card {card.index}</span>
+                        {card.tags.length > 0 && (
+                          <span className="text-[10px] text-gray-400 truncate">{card.tags.join(' › ')}</span>
+                        )}
+                      </div>
+                      <div
+                        className="text-gray-700 leading-relaxed break-words"
+                        dangerouslySetInnerHTML={{
+                          __html: card.front_html
+                            .replace(/\{\{c\d+::([^}]+)\}\}/g, '<mark style="background:#dbeafe;color:#1d4ed8;padding:0 2px;border-radius:2px">$1</mark>')
+                        }}
+                      />
+                      {card.extra && <div className="text-gray-400 italic border-t border-gray-100 pt-1">{card.extra}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

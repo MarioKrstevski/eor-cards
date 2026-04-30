@@ -1620,10 +1620,20 @@ export default function CardsPanel({
                   const cardList = selected.map((c, i) => {
                     const tags = (c.tags || []).join(' > ') || 'no topic';
                     const vt = [c.vignette ? 'has vignette' : 'no vignette', c.teaching_case ? 'has teaching case' : 'no teaching case'].join(', ');
-                    return `Card ${i + 1}:\n  Text: ${c.front_text || c.front_html}\n  Topic: ${tags}\n  ${vt}`;
+                    return `Card ${i + 1}:\n  Front (with cloze): ${c.front_html}\n  Topic: ${tags}\n  ${vt}`;
                   }).join('\n\n');
                   window.dispatchEvent(new CustomEvent('discuss-cards', {
-                    detail: { message: `Here are the cards I want to discuss:\n\n${cardList}\n\nPlease review them against the current rules and explain what's controlling how they were generated.` }
+                    detail: {
+                      message: `Here are the cards I want to discuss:\n\n${cardList}\n\nPlease review them against the current rules and explain what's controlling how they were generated.`,
+                      cards: selected.map((c, i) => ({
+                        index: i + 1,
+                        front_html: c.front_html,
+                        tags: c.tags || [],
+                        vignette: c.vignette,
+                        teaching_case: c.teaching_case,
+                        extra: c.extra,
+                      })),
+                    }
                   }));
                 }}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors duration-150"
