@@ -23,7 +23,13 @@ NEVER use markdown formatting. \
 * characters are FORBIDDEN for emphasis. \
 No #, no backticks, no markdown of any kind. \
 For any emphasis, use only HTML tags: <b>term</b>. \
-The output format is: number|card text"""
+The output format is: number|card text|additional context \
+The additional context after the second | is optional. When the rules specify \
+additional context, sibling footers, or supplementary information for a card, \
+place it after a second | delimiter on the same line. \
+Do NOT concatenate additional context directly into the card text. \
+The card text (between first and second |) must contain ONLY the primary testable content. \
+Example: 1|Primary card text with {{c1::clozes}}.|Other items: item A, item B, item C."""
 
 
 def strip_card_html(card_text: str) -> str:
@@ -159,7 +165,7 @@ def generate_cards_for_chunk(
         f"Source text:\n{chunk.get('source_text', '')}"
         f"{sibling_section}\n\n"
         f"Generate the cards following ALL the rules above. Output in the exact format:\n"
-        f"number|cloze card text\n\n"
+        f"number|cloze card text|additional context (optional)\n\n"
         f"If you cannot confidently generate quality cards for this content, output NEEDS_REVIEW on its own line at the end.\n"
         f"Remember: card N uses only cN for all clozes."
     )
