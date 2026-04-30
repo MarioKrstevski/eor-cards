@@ -306,17 +306,25 @@ def _run_generation(
         def process_chunk(chunk_data):
             tid = chunk_data.get("topic_id")
             siblings = [s for s in chunks_by_topic.get(tid, []) if s["id"] != chunk_data["id"]] if tid else []
-            cards_data, needs_review, usage = generate_cards_for_chunk(
-                client,
-                {"source_text": chunk_data["source_text"], "heading": chunk_data["heading"],
-                 "topic_path": chunk_data["topic_path"]},
-                rules_text,
-                model,
-                sibling_texts=siblings,
-            )
-            return chunk_data, cards_data, needs_review, usage
+            for attempt in range(4):
+                try:
+                    cards_data, needs_review, usage = generate_cards_for_chunk(
+                        client,
+                        {"source_text": chunk_data["source_text"], "heading": chunk_data["heading"],
+                         "topic_path": chunk_data["topic_path"]},
+                        rules_text,
+                        model,
+                        sibling_texts=siblings,
+                    )
+                    return chunk_data, cards_data, needs_review, usage
+                except anthropic.RateLimitError:
+                    if attempt == 3:
+                        raise
+                    wait = 20 * (2 ** attempt)  # 20s, 40s, 80s
+                    logger.warning("Rate limit on chunk %d, retrying in %ds (attempt %d/4)", chunk_data["id"], wait, attempt + 1)
+                    time.sleep(wait)
 
-        with ThreadPoolExecutor(max_workers=14) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             futures = {executor.submit(process_chunk, c): c for c in chunks_by_id.values()}
             for future in as_completed(futures):
                 chunk_data, cards_data, needs_review, usage = future.result()
@@ -416,10 +424,21 @@ def _run_supplemental(
         processed_groups = 0
         total_cards_updated = 0
 
-        with ThreadPoolExecutor(max_workers=14) as executor:
+        def generate_supplemental_with_retry(condition, group_cards):
+            for attempt in range(4):
+                try:
+                    return generate_supplemental_for_group(client, condition, group_cards, rules_text, model)
+                except anthropic.RateLimitError:
+                    if attempt == 3:
+                        raise
+                    wait = 20 * (2 ** attempt)
+                    logger.warning("Rate limit on supplemental '%s', retrying in %ds (attempt %d/4)", condition, wait, attempt + 1)
+                    time.sleep(wait)
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
             futures = {
                 executor.submit(
-                    generate_supplemental_for_group, client, condition, group_cards, rules_text, model
+                    generate_supplemental_with_retry, condition, group_cards
                 ): (condition, group_cards)
                 for condition, group_cards in condition_groups.items()
             }
