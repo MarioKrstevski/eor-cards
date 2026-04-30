@@ -48,6 +48,36 @@ def fix_markdown_bold(text: str) -> str:
     return re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
 
 
+def format_extra_as_list(text: str) -> str:
+    """Format extra/additional context into line-separated HTML list items.
+
+    Handles semicolon-separated, dash-prefixed, and numbered list patterns.
+    """
+    # If it already has <br> or block HTML, leave it alone
+    if '<br' in text.lower() or '<div' in text.lower() or '<li' in text.lower():
+        return text
+    # Split by common list delimiters: semicolons or dash-prefixed items
+    # First try semicolons (most common from model output)
+    if '; ' in text:
+        # Find the label prefix (e.g., "Other triggers:") before the list
+        label_match = re.match(r'^(.*?:\s*)', text)
+        label = label_match.group(1) if label_match else ''
+        items_text = text[len(label):]
+        items = [item.strip() for item in items_text.split(';') if item.strip()]
+        if len(items) > 1:
+            items_html = ''.join(f'<br>• {item}' for item in items)
+            return f'{label}{items_html}'
+    # Dash-prefixed items: "- item1- item2"
+    if re.search(r'(?:^|- )', text):
+        parts = re.split(r'\s*-\s+', text)
+        label = parts[0].strip()
+        items = [p.strip() for p in parts[1:] if p.strip()]
+        if len(items) > 1:
+            items_html = ''.join(f'<br>• {item}' for item in items)
+            return f'{label}{items_html}' if label else items_html.lstrip('<br>')
+    return text
+
+
 def parse_card_output(raw: str) -> tuple[list[dict], bool]:
     """Parse the numbered|card format output from Claude.
 
@@ -67,7 +97,7 @@ def parse_card_output(raw: str) -> tuple[list[dict], bool]:
         if match:
             parts = match.group(2).split('|', 1)
             card_text = fix_markdown_bold(parts[0].strip())
-            extra = fix_markdown_bold(parts[1].strip()) if len(parts) > 1 else None
+            extra = format_extra_as_list(fix_markdown_bold(parts[1].strip())) if len(parts) > 1 else None
             cards.append({
                 "card_number": int(match.group(1)),
                 "front_html": card_text,
