@@ -1026,9 +1026,9 @@ export default function CardsPanel({
     () => [
       columnHelper.display({
         id: 'select',
-        size: 64,
-        minSize: 64,
-        maxSize: 64,
+        size: 88,
+        minSize: 88,
+        maxSize: 88,
         enableResizing: false,
         enableHiding: false,
         header: (ctx) => {

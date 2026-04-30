@@ -119,7 +119,7 @@ def regenerate_card(card_id: int, body: RegenerateCardRequest, db: Session = Dep
     chunk = db.get(Chunk, card.chunk_id)
     if not chunk:
         raise HTTPException(404, "Chunk not found")
-    rs = db.query(RuleSet).filter_by(is_default=True).first()
+    rs = db.query(RuleSet).filter_by(rule_type='generation', is_default=True).first()
     rules = rs.content if rs else "Generate cloze cards. Use {{c1::term}} format."
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     cards_data, needs_review, usage = regenerate_single_card(
