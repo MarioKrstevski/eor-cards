@@ -332,6 +332,7 @@ def call_claude_for_chunking(elements: list, images: list, rules_md_path: Option
     response = client.messages.create(
         model=model,
         max_tokens=4096,
+        temperature=0.2,
         messages=[{"role": "user", "content": content}],
     )
     usage = {
