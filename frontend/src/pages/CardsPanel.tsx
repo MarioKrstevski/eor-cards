@@ -634,7 +634,10 @@ export default function CardsPanel({
   const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(() => {
     try {
       const stored = localStorage.getItem('cards_column_sizing');
-      return stored ? JSON.parse(stored) : {};
+      const parsed = stored ? JSON.parse(stored) : {};
+      // select column has fixed size — never let a stale stored value override it
+      delete parsed['select'];
+      return parsed;
     } catch { return {}; }
   });
 
