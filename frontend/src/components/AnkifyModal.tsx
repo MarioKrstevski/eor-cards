@@ -151,7 +151,7 @@ export default function AnkifyModal({ cards, onClose }: AnkifyModalProps) {
           {revealed && card.extra && (
             <div className="mt-4 bg-white rounded-xl border border-gray-200 px-5 py-3.5">
               <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Additional context</p>
-              <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{card.extra}</div>
+              <div className="text-sm text-gray-600 leading-relaxed" dangerouslySetInnerHTML={{ __html: card.extra }} />
             </div>
           )}
 
