@@ -38,7 +38,11 @@ export default function HelpChat() {
   }, [messages]);
 
   useEffect(() => {
-    if (open) inputRef.current?.focus();
+    if (open) {
+      inputRef.current?.focus();
+      // Scroll to bottom when reopening with existing messages
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'instant' }), 50);
+    }
   }, [open, view]);
 
   useEffect(() => {

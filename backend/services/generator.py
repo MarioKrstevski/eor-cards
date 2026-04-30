@@ -93,6 +93,7 @@ def regenerate_single_card(
     response = client.messages.create(
         model=model,
         max_tokens=512,
+        temperature=0.2,
         messages=[{
             "role": "user",
             "content": [
@@ -163,6 +164,7 @@ def generate_cards_for_chunk(
     response = client.messages.create(
         model=model,
         max_tokens=4096,
+        temperature=0.2,
         messages=[{
             "role": "user",
             "content": [
