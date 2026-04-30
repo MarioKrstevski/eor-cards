@@ -37,6 +37,12 @@ def build_tree(nodes: list[Curriculum]) -> list[dict]:
             roots.append(by_id[n.id])
         elif n.parent_id in by_id:
             by_id[n.parent_id]["children"].append(by_id[n.id])
+    # Sort each level alphabetically by name
+    def sort_tree(nodes_list):
+        nodes_list.sort(key=lambda x: x["name"].lower())
+        for node in nodes_list:
+            sort_tree(node["children"])
+    sort_tree(roots)
     return roots
 
 @router.get("")

@@ -180,6 +180,11 @@ export async function bulkMarkReviewed(cardIds: number[]): Promise<{ updated: nu
   return res.data;
 }
 
+export async function bulkDeleteCards(cardIds: number[]): Promise<{ deleted: number }> {
+  const res = await http.post<{ deleted: number }>('/cards/bulk-delete', { card_ids: cardIds });
+  return res.data;
+}
+
 export async function deleteCard(id: number): Promise<void> {
   await http.delete(`/cards/${id}`);
 }
