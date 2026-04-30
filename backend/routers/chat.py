@@ -234,6 +234,8 @@ Tell them: paste the core content requirements from their Claude Chat prompt int
 class ChatMessageRequest(BaseModel):
     message: str
     session_id: Optional[int] = None
+    rule_set_id: Optional[int] = None
+    vignette_rule_set_id: Optional[int] = None
 
 
 class ChatSessionCreate(BaseModel):
@@ -303,30 +305,42 @@ def send_message(body: ChatMessageRequest, db: Session = Depends(get_db)):
         }
 
 
-def _build_rules_block(db: Session) -> str:
-    """Fetch the current default rules from DB and build a context string for the chat."""
-    gen_rule = db.query(RuleSet).filter_by(rule_type="generation", is_default=True).first()
-    vig_rule = db.query(RuleSet).filter_by(rule_type="vignette", is_default=True).first()
+def _build_rules_block(db: Session, rule_set_id: int = None, vignette_rule_set_id: int = None) -> str:
+    """Fetch the currently selected rules from DB and build a context string for the chat.
 
-    gen_text = gen_rule.content if gen_rule else "(no default generation rule set)"
-    vig_text = vig_rule.content if vig_rule else "(no default vignette + teaching case rule set)"
+    Uses the IDs passed from the user's Settings if provided, otherwise falls back to defaults.
+    """
+    if rule_set_id:
+        gen_rule = db.get(RuleSet, rule_set_id)
+    else:
+        gen_rule = db.query(RuleSet).filter_by(rule_type="generation", is_default=True).first()
+
+    if vignette_rule_set_id:
+        vig_rule = db.get(RuleSet, vignette_rule_set_id)
+    else:
+        vig_rule = db.query(RuleSet).filter_by(rule_type="vignette", is_default=True).first()
+
+    gen_text = gen_rule.content if gen_rule else "(no generation rule set selected)"
+    vig_text = vig_rule.content if vig_rule else "(no vignette + teaching case rule set selected)"
+    gen_name = gen_rule.name if gen_rule else "none"
+    vig_name = vig_rule.name if vig_rule else "none"
 
     return f"""---
 
-## CURRENT ACTIVE RULES (live — fetched from the database)
+## CURRENTLY ACTIVE RULES (live — fetched from the database, exactly as selected in Settings)
 
-These are the exact prompts being used right now when generating cards and vignettes/teaching cases. Use them to explain why output looks the way it does, spot issues, and help the user improve them.
+IMPORTANT: When quoting or referencing any part of these rules, reproduce the exact wording verbatim. Never summarize, rephrase, or reorder the content. If a rule is relevant to the user's question, quote the specific line or sentence directly.
 
-### Card Generation Rules (default rule set: "{gen_rule.name if gen_rule else 'none'}"):
+### Card Generation Rules — rule set: "{gen_name}"
 {gen_text}
 
-### Vignette + Teaching Case Rules (default rule set: "{vig_rule.name if vig_rule else 'none'}"):
+### Vignette + Teaching Case Rules — rule set: "{vig_name}"
 {vig_text}
 
-### Hardcoded Anchor Instruction (always injected before Generation Rules, not editable by user):
+### Hardcoded Anchor Instruction (always injected before Generation Rules — not editable by the user)
 {ANCHOR_INSTRUCTION}
 
-Note: the anchor instruction is hardcoded — it cannot be changed via the Rules editor. It ensures the condition/disease name is never cloze-deleted."""
+Note: the anchor instruction is hardcoded and cannot be changed via the Rules editor. It ensures the condition/disease name is never cloze-deleted."""
 
 
 def _send_message_inner(body: ChatMessageRequest, db: Session):
@@ -344,8 +358,8 @@ def _send_message_inner(body: ChatMessageRequest, db: Session):
     history = list(session.messages or [])
     history.append({"role": "user", "content": body.message})
 
-    # Build live rules context block
-    rules_block = _build_rules_block(db)
+    # Build live rules context block using the rule sets selected in the user's Settings
+    rules_block = _build_rules_block(db, body.rule_set_id, body.vignette_rule_set_id)
 
     # Call Claude (cached documentation + live rules)
     try:

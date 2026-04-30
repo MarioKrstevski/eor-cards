@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { sendChatMessage, getChatSessions, getChatSession, deleteChatSession, createRequest, type ChatSessionSummary } from '../api';
 import { APP_VERSION } from '../version';
+import { useSettings } from '../context/SettingsContext';
 
 interface Message {
   role: string;
@@ -8,6 +9,7 @@ interface Message {
 }
 
 export default function HelpChat() {
+  const { selectedRuleSetId, vignetteRuleSetId } = useSettings();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'chat' | 'sessions'>('chat');
 
@@ -51,7 +53,7 @@ export default function HelpChat() {
       setMessages([userMsg]);
       setLoading(true);
       try {
-        const resp = await sendChatMessage(message, null);
+        const resp = await sendChatMessage(message, null, selectedRuleSetId, vignetteRuleSetId);
         setMessages([userMsg, { role: 'assistant', content: resp.content }]);
         setSessionId(resp.session_id);
         setSessionName(resp.session_name);
@@ -111,7 +113,7 @@ export default function HelpChat() {
     setLoading(true);
 
     try {
-      const resp = await sendChatMessage(text, sessionId);
+      const resp = await sendChatMessage(text, sessionId, selectedRuleSetId, vignetteRuleSetId);
       setMessages(prev => [...prev, { role: 'assistant', content: resp.content }]);
       setSessionId(resp.session_id);
       setSessionName(resp.session_name);

@@ -345,14 +345,24 @@ export async function refineRequest(messages: { role: string; content: string }[
   return res.data.content;
 }
 
-export async function sendChatMessage(message: string, sessionId?: number | null): Promise<{
+export async function sendChatMessage(
+  message: string,
+  sessionId?: number | null,
+  ruleSetId?: number | null,
+  vignetteRuleSetId?: number | null,
+): Promise<{
   content: string;
   session_id: number;
   session_name: string;
 }> {
   const res = await http.post<{ content: string; session_id: number; session_name: string }>(
     '/chat/send',
-    { message, session_id: sessionId ?? null }
+    {
+      message,
+      session_id: sessionId ?? null,
+      rule_set_id: ruleSetId ?? null,
+      vignette_rule_set_id: vignetteRuleSetId ?? null,
+    }
   );
   return res.data;
 }
