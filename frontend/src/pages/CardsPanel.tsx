@@ -812,20 +812,20 @@ export default function CardsPanel({
   const handleReject = useCallback(async (id: number) => {
     setActionError(null);
     try {
-      await rejectCard(id);
-      if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-      else if (topicPath) fetchCards(null, topicPath);
+      const updated = await rejectCard(id);
+      setCards(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
+      invalidateDocCache();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to reject card'); }
-  }, [documentId, chunkId, topicPath, fetchCards]);
+  }, [invalidateDocCache]);
 
   const handleRestore = useCallback(async (id: number) => {
     setActionError(null);
     try {
-      await updateCard(id, { status: 'active' });
-      if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-      else if (topicPath) fetchCards(null, topicPath);
+      const updated = await updateCard(id, { status: 'active' });
+      setCards(prev => prev.map(c => c.id === id ? { ...c, ...updated } : c));
+      invalidateDocCache();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to restore card'); }
-  }, [documentId, chunkId, topicPath, fetchCards]);
+  }, [invalidateDocCache]);
 
   const handleDelete = useCallback(async (id: number) => {
     setActionError(null);
@@ -972,9 +972,10 @@ export default function CardsPanel({
       await bulkMarkReviewed(unreviewedSelectedIds);
       setSelectedIds(new Set());
       setCards(prev => prev.map(c => unreviewedSelectedIds.includes(c.id) ? { ...c, is_reviewed: true } : c));
+      invalidateDocCache();
       onReviewChange?.();
     } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to mark as reviewed'); }
-  }, [unreviewedSelectedIds, onReviewChange]);
+  }, [unreviewedSelectedIds, onReviewChange, invalidateDocCache]);
 
   const handleBulkDelete = useCallback(async () => {
     const ids = [...selectedIds];
@@ -1258,6 +1259,7 @@ export default function CardsPanel({
             try {
               const updated = await updateCard(card.id, { ref_img: dataUri });
               setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: updated.ref_img } : c));
+              invalidateDocCache();
             } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save image'); }
           }
 
@@ -1296,6 +1298,7 @@ export default function CardsPanel({
                         try {
                           const updated = await updateCard(card.id, { ref_img_position: 'front' });
                           setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img_position: updated.ref_img_position } : c));
+                          invalidateDocCache();
                         } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
                       }}
                     >Front</button>
@@ -1305,6 +1308,7 @@ export default function CardsPanel({
                         try {
                           const updated = await updateCard(card.id, { ref_img_position: 'back' });
                           setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img_position: updated.ref_img_position } : c));
+                          invalidateDocCache();
                         } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
                       }}
                     >Back</button>
@@ -1314,6 +1318,7 @@ export default function CardsPanel({
                         try {
                           await updateCard(card.id, { ref_img: '' });
                           setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: null } : c));
+                          invalidateDocCache();
                         } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to remove image'); }
                       }}
                     >Remove</button>
@@ -1431,6 +1436,7 @@ export default function CardsPanel({
       handleRegen,
       showAnkiFormat,
       selectedIds,
+      invalidateDocCache,
     ]
   );
 
