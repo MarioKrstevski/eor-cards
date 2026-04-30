@@ -48,11 +48,23 @@ function AppInner() {
       // Re-fetch real total from DB after animation (catches chat costs too)
       refreshUsage();
     }
+    function onChatCost(e: Event) {
+      const { cost, originX, originY } = (e as CustomEvent<{ cost: number; originX?: number; originY?: number }>).detail;
+      if (cost < 0.000001) return;
+      const prev = prevCostRef.current;
+      const next = prev + cost;
+      prevCostRef.current = next;
+      window.dispatchEvent(new CustomEvent('costIncurred', {
+        detail: { cost, prevTotal: prev, newTotal: next, originX, originY },
+      }));
+    }
     window.addEventListener('costProgress', onProgress);
     window.addEventListener('costComplete', onComplete);
+    window.addEventListener('chatCostIncurred', onChatCost);
     return () => {
       window.removeEventListener('costProgress', onProgress);
       window.removeEventListener('costComplete', onComplete);
+      window.removeEventListener('chatCostIncurred', onChatCost);
     };
   }, []);
 

@@ -21,6 +21,7 @@ export default function HelpChat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [requestAdded, setRequestAdded] = useState<number | null>(null);
+  const [pendingContext, setPendingContext] = useState<string | null>(null);
 
   // Session list
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
@@ -40,31 +41,19 @@ export default function HelpChat() {
   }, [open, view]);
 
   useEffect(() => {
-    async function handleDiscussCards(e: Event) {
+    function handleDiscussCards(e: Event) {
       const { message } = (e as CustomEvent).detail;
-      // Open chat in a fresh session
+      // Open chat in a fresh session, pre-load context — wait for user's question
       setOpen(true);
       setView('chat');
       setSessionId(null);
       setSessionName('New chat');
+      setSessionVersion(APP_VERSION);
+      setMessages([]);
       setRequestAdded(null);
       setInput('');
-
-      // Add user message immediately and send
-      const userMsg = { role: 'user', content: message };
-      setMessages([userMsg]);
-      setLoading(true);
-      try {
-        const resp = await sendChatMessage(message, null, selectedRuleSetId, vignetteRuleSetId);
-        setMessages([userMsg, { role: 'assistant', content: resp.content }]);
-        setSessionId(resp.session_id);
-        setSessionName(resp.session_name);
-        fireCostFlash(resp.cost_usd ?? 0);
-      } catch {
-        setMessages([userMsg, { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }]);
-      } finally {
-        setLoading(false);
-      }
+      setPendingContext(message);
+      setTimeout(() => inputRef.current?.focus(), 50);
     }
     window.addEventListener('discuss-cards', handleDiscussCards);
     return () => window.removeEventListener('discuss-cards', handleDiscussCards);
@@ -79,10 +68,10 @@ export default function HelpChat() {
     const originX = rect ? rect.left + rect.width / 2 : undefined;
     const originY = rect ? rect.top + rect.height / 2 : undefined;
     // After a short pause let the label show, then fire missiles
+    // Dispatch chatCostIncurred — App.tsx will fill in the correct prevTotal
     setTimeout(() => {
-      const prevTotal = 0; // App.tsx will re-fetch after animation
-      window.dispatchEvent(new CustomEvent('costIncurred', {
-        detail: { cost, prevTotal, newTotal: prevTotal + cost, originX, originY },
+      window.dispatchEvent(new CustomEvent('chatCostIncurred', {
+        detail: { cost, originX, originY },
       }));
       // Fade out the label as missiles fly
       setTimeout(() => setLastCost(null), 2500);
@@ -130,12 +119,16 @@ export default function HelpChat() {
     const text = input.trim();
     if (!text || loading) return;
 
+    // If there's pending context (from Discuss in Chat), prepend it to the first message
+    const fullMessage = pendingContext ? `${pendingContext}\n\n---\n\n${text}` : text;
+    setPendingContext(null);
+
     setMessages(prev => [...prev, { role: 'user', content: text }]);
     setInput('');
     setLoading(true);
 
     try {
-      const resp = await sendChatMessage(text, sessionId, selectedRuleSetId, vignetteRuleSetId);
+      const resp = await sendChatMessage(fullMessage, sessionId, selectedRuleSetId, vignetteRuleSetId);
       setMessages(prev => [...prev, { role: 'assistant', content: resp.content }]);
       setSessionId(resp.session_id);
       setSessionName(resp.session_name);
@@ -354,6 +347,19 @@ export default function HelpChat() {
             )}
             <div ref={messagesEndRef} />
           </div>
+
+          {/* Pending context banner */}
+          {pendingContext && (
+            <div className="mx-3 mb-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg flex items-start gap-2 shrink-0">
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mt-0.5 shrink-0">Context loaded</span>
+              <span className="text-[11px] text-gray-500 truncate flex-1">{pendingContext.slice(0, 120)}{pendingContext.length > 120 ? '…' : ''}</span>
+              <button onClick={() => setPendingContext(null)} className="text-gray-300 hover:text-gray-500 shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
 
           {/* Input */}
           <div className="border-t border-gray-100 px-3 py-2.5 shrink-0">
