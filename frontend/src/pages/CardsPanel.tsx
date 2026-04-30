@@ -1594,7 +1594,11 @@ export default function CardsPanel({
               <button
                 onClick={() => {
                   const selected = cards.filter(c => selectedIds.has(c.id));
-                  const cardList = selected.map((c, i) => `${i + 1}. ${c.front_text || c.front_html}`).join('\n');
+                  const cardList = selected.map((c, i) => {
+                    const tags = (c.tags || []).join(' > ') || 'no topic';
+                    const vt = [c.vignette ? 'has vignette' : 'no vignette', c.teaching_case ? 'has teaching case' : 'no teaching case'].join(', ');
+                    return `Card ${i + 1}:\n  Text: ${c.front_text || c.front_html}\n  Topic: ${tags}\n  ${vt}`;
+                  }).join('\n\n');
                   window.dispatchEvent(new CustomEvent('discuss-cards', {
                     detail: { message: `Here are the cards I want to discuss:\n\n${cardList}\n\nPlease review them against the current rules and explain what's controlling how they were generated.` }
                   }));
