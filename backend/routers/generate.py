@@ -336,7 +336,6 @@ def _run_generation(
                         card_number=card_data["card_number"],
                         front_html=card_data["front_html"],
                         front_text=card_data["front_text"],
-                        extra=card_data.get("extra"),
                         tags=tags,
                         needs_review=needs_review,
                         ref_img=chunk_data.get("ref_img"),

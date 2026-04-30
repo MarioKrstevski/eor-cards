@@ -59,14 +59,11 @@ def parse_card_output(raw: str) -> tuple[list[dict], bool]:
             continue
         match = re.match(r'^(\d+)\|(.+)$', line)
         if match:
-            parts = match.group(2).split('|', 1)
-            card_text = fix_markdown_bold(parts[0].strip())
-            extra = parts[1].strip() if len(parts) > 1 else None
+            card_text = fix_markdown_bold(match.group(2).strip())
             cards.append({
                 "card_number": int(match.group(1)),
                 "front_html": card_text,
                 "front_text": strip_card_html(card_text),
-                "extra": extra,
             })
     return cards, needs_review
 
