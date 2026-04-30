@@ -1203,30 +1203,84 @@ export default function CardsPanel({
         size: 200,
         cell: ({ row }) => {
           const card = row.original;
-          if (!card.ref_img) return <span className="text-gray-400 text-xs">No image</span>;
+
+          async function applyImage(dataUri: string) {
+            try {
+              const updated = await updateCard(card.id, { ref_img: dataUri });
+              setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: updated.ref_img } : c));
+            } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save image'); }
+          }
+
+          function handleFile(file: File) {
+            if (!file.type.startsWith('image/')) return;
+            const reader = new FileReader();
+            reader.onload = (e) => { if (e.target?.result) applyImage(e.target.result as string); };
+            reader.readAsDataURL(file);
+          }
+
+          async function handlePaste() {
+            try {
+              const items = await navigator.clipboard.read();
+              for (const item of items) {
+                const imageType = item.types.find(t => t.startsWith('image/'));
+                if (imageType) {
+                  const blob = await item.getType(imageType);
+                  const reader = new FileReader();
+                  reader.onload = (e) => { if (e.target?.result) applyImage(e.target.result as string); };
+                  reader.readAsDataURL(blob);
+                  return;
+                }
+              }
+            } catch { setActionError('Paste failed — try using the upload button instead'); }
+          }
+
           return (
-            <div className="flex flex-col items-center gap-1">
-              <img src={card.ref_img} alt="Reference" className="max-h-24 max-w-full rounded" />
-              <div className="flex gap-1">
-                <button
-                  className={`text-xs px-2 py-0.5 rounded ${card.ref_img_position === 'front' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
-                  onClick={async () => {
-                    try {
-                      const updated = await updateCard(card.id, { ref_img_position: 'front' });
-                      setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img_position: updated.ref_img_position } : c));
-                    } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
-                  }}
-                >Front</button>
-                <button
-                  className={`text-xs px-2 py-0.5 rounded ${card.ref_img_position === 'back' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
-                  onClick={async () => {
-                    try {
-                      const updated = await updateCard(card.id, { ref_img_position: 'back' });
-                      setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img_position: updated.ref_img_position } : c));
-                    } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
-                  }}
-                >Back</button>
-              </div>
+            <div className="flex flex-col items-center gap-1.5">
+              {card.ref_img ? (
+                <>
+                  <img src={card.ref_img} alt="Reference" className="max-h-24 max-w-full rounded" />
+                  <div className="flex gap-1 flex-wrap justify-center">
+                    <button
+                      className={`text-xs px-2 py-0.5 rounded ${card.ref_img_position === 'front' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                      onClick={async () => {
+                        try {
+                          const updated = await updateCard(card.id, { ref_img_position: 'front' });
+                          setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img_position: updated.ref_img_position } : c));
+                        } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
+                      }}
+                    >Front</button>
+                    <button
+                      className={`text-xs px-2 py-0.5 rounded ${card.ref_img_position === 'back' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}
+                      onClick={async () => {
+                        try {
+                          const updated = await updateCard(card.id, { ref_img_position: 'back' });
+                          setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img_position: updated.ref_img_position } : c));
+                        } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save'); }
+                      }}
+                    >Back</button>
+                    <button
+                      className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100"
+                      onClick={async () => {
+                        try {
+                          await updateCard(card.id, { ref_img: '' });
+                          setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: null } : c));
+                        } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to remove image'); }
+                      }}
+                    >Remove</button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-1">
+                  <label className="cursor-pointer text-xs px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
+                    Upload
+                    <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
+                  </label>
+                  <button
+                    onClick={handlePaste}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                  >Paste</button>
+                </div>
+              )}
             </div>
           );
         },

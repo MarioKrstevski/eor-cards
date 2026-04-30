@@ -24,6 +24,7 @@ class CardPatch(BaseModel):
     extra: Optional[str] = None
     vignette: Optional[str] = None
     teaching_case: Optional[str] = None
+    ref_img: Optional[str] = None
     ref_img_position: Optional[str] = None
     status: Optional[CardStatus] = None
     is_reviewed: Optional[bool] = None
@@ -97,6 +98,8 @@ def patch_card(card_id: int, body: CardPatch, db: Session = Depends(get_db)):
         card.vignette = body.vignette
     if body.teaching_case is not None:
         card.teaching_case = body.teaching_case
+    if body.ref_img is not None:
+        card.ref_img = body.ref_img if body.ref_img != "" else None
     if body.ref_img_position is not None:
         card.ref_img_position = body.ref_img_position
     if body.status is not None:

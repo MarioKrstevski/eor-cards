@@ -163,6 +163,7 @@ export async function updateCard(
     teaching_case?: string | null;
     status?: CardStatus;
     is_reviewed?: boolean;
+    ref_img?: string | null;
     ref_img_position?: 'front' | 'back';
   }
 ): Promise<Card> {
