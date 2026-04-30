@@ -133,6 +133,8 @@ def regenerate_card(card_id: int, body: RegenerateCardRequest, db: Session = Dep
     if cards_data:
         card.front_html = cards_data[0]["front_html"]
         card.front_text = cards_data[0]["front_text"]
+        if cards_data[0].get("extra") is not None:
+            card.extra = cards_data[0]["extra"]
         card.is_reviewed = False
     db.commit()
     if usage:
