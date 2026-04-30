@@ -79,7 +79,13 @@ def list_cards(
     if search_q:
         q_pattern = f"%{search_q}%"
         q = q.filter(Card.front_text.ilike(q_pattern))
-    q = q.join(Card.chunk).order_by(Chunk.chunk_index, Card.card_number)
+    q = q.join(Card.chunk)
+    if document_id or chunk_id:
+        # Document view: follow document flow
+        q = q.order_by(Chunk.chunk_index, Card.card_number)
+    else:
+        # Topic/search view: group by topic, then document order within
+        q = q.order_by(Chunk.topic_path, Card.document_id, Card.card_number)
     return [card_to_dict(c) for c in q.all()]
 
 
