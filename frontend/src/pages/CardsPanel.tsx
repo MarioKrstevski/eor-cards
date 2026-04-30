@@ -44,7 +44,17 @@ const columnHelper = createColumnHelper<Card>();
 
 // ── Cloze rendering utility ────────────────────────────────────────────────────
 function renderClozeHtml(html: string): string {
-  return html.replace(/\{\{c\d+::([^}]+)\}\}/g, '$1');
+  // Strip wrapped span variants first
+  let result = html.replace(
+    /(?:<b>)?<span[^>]*>\{\{c\d+::([^}]+)\}\}<\/span>(?:<\/b>)?/g,
+    '<span style="text-decoration:underline;text-decoration-color:#2563eb;text-underline-offset:2px;font-weight:600">$1</span>'
+  );
+  // Bare cloze
+  result = result.replace(
+    /\{\{c\d+::([^}]+)\}\}/g,
+    '<span style="text-decoration:underline;text-decoration-color:#2563eb;text-underline-offset:2px;font-weight:600">$1</span>'
+  );
+  return result;
 }
 
 function stripHtmlKeepCloze(html: string): string {
