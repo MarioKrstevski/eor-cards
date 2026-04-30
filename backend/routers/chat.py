@@ -68,15 +68,18 @@ The main working page. Split into a left sidebar and right content area.
 
 **Cards Panel (right side, when a document is selected):**
 - Table showing all cards for the selected document
-- **Columns available**: #, Card Text, Tags, Extra, Vignette, Teaching Case, Ref Image, Status, Actions
-- Toggle optional columns with the column selector (top-right of the panel)
+- **Columns available**: #, Card Text, Tags, Extra (Additional Context), Vignette, Teaching Case, Ref Image
+- Toggle optional columns (Extra, Ref Image, Vignette, Teaching Case) with the **Columns** button in the toolbar
 - **Double-click** any cell to edit inline
-- **Select column** (far left): checkboxes to select cards for bulk actions
-- **# column**: card number + status dot (green=active, red=rejected) + info icon
-- **Actions column**: Reject, Regenerate, Delete buttons per card
-- **Ankify button** (top of panel): opens full-screen Anki-style preview with cloze reveal
-- **Bulk actions bar** (appears when cards are selected): Generate Vignettes & Teaching Cases, Mark Reviewed
-- **Filter/search bar**: filter by status, reviewed state, tag, or search text
+- **View modes**: Table view or Card grid view (toggle in toolbar)
+- **Anki/Text toggle**: switches card text display between plain text and Anki cloze view (cloze terms shown with blue underline)
+- **Select column** (far left): checkboxes to select cards + per-card action buttons (edit, reject/restore, delete, regenerate)
+- **# column**: card number + status dot (amber=unreviewed, gray=reviewed, red=rejected) + info icon
+- **Toolbar Row 1** (always visible): View mode, Columns, Anki/Text toggle, Unreviewed only, Status filter, Search, card count, Export
+- **Toolbar Row 2** (appears when cards selected): shows "N selected" + Ankify, Mark Reviewed, Gen/Regen Vignettes & Cases, Discuss in Chat, Delete
+- **Ankify button**: opens full-screen Anki-style preview with cloze reveal (hidden terms as gray blanks, revealed as blue underlined)
+- **Discuss in Chat**: loads selected cards as context in the Help Chat (with full cloze syntax), waits for user's question
+- **Extra field**: populated automatically during card generation when the AI outputs additional context (sibling footers, related items). Uses `|` delimiter in the output format.
 
 **Post-Generation Screen** (appears after card generation completes):
 - Shows how many cards were generated
@@ -126,10 +129,14 @@ Reference data management. Has tabs at the top.
 ### HELP CHAT (this chat — floating button, bottom-right)
 - Blue circle button with a chat icon
 - Opens a chat panel (fixed position, bottom-right)
-- **Header**: session name, history button (clock icon), new chat button (+), close (X)
+- **Expand/collapse**: arrow icon (left of history) toggles between normal size and full viewport
+- **Header**: session name, expand toggle, history button (clock icon), new chat button (+), close (X)
+- **Input**: textarea (Enter = new line, Cmd/Ctrl+Enter = send)
 - **Session history view**: lists past chats with name, message count, version. Click to reopen. Delete icon on hover.
 - **Version warning**: if a chat was started on an older app version, an amber banner appears
+- **Context loaded banner**: appears when cards are loaded via "Discuss in Chat" — shows card count + info (i) icon to expand card details (front text with cloze highlighted, tags, extra, vignette, teaching case)
 - **"Add as Request" button**: appears on assistant messages that mention contacting Mario — click to add directly to the Requests tab
+- **Cost display**: shows +$X.XXXX near the X button after each response, then fires cost animation to the header total
 
 ---
 
@@ -227,10 +234,16 @@ Tell them: paste the core content requirements from their Claude Chat prompt int
 
 ## TECHNICAL NOTES (for questions about how things work under the hood)
 
-- Prompt caching reduces cost ~90% for the rules block across chunks/conditions
-- 14 parallel workers process chunks and conditions simultaneously
+- All AI calls use temperature=0.2 for consistent output across runs
+- Prompt caching reduces cost ~90% for the rules block across chunks/conditions (two cached system blocks: documentation + rules)
+- 3 parallel workers process chunks and conditions simultaneously (with exponential backoff retry on rate limits)
+- Card output format: `number|card text|additional context (optional)` — parser splits on `|` delimiters
+- Any `**bold**` markdown in output is auto-converted to `<b>bold</b>` HTML by post-processing
+- Additional context in the extra field is auto-formatted: semicolons and dashes are converted to bullet lists
 - note_id: Anki-compatible millisecond timestamp per card, used for deduplication on re-import
 - Chunking model is fixed to Haiku; generation models are configurable per session via Settings
+- Card regeneration uses the default Generation rule set (filtered by rule_type='generation')
+- This chat uses currently selected rule sets from your Settings (not just defaults)
 - CSV export includes: note_id, front_html, tags, extra, vignette, teaching_case, ref_img"""
 
 

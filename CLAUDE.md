@@ -28,13 +28,16 @@ v3/
 │   ├── routers/
 │   │   ├── curriculum.py  # CRUD for curriculum tree
 │   │   ├── documents.py   # Upload (.docx), paste (HTML clipboard), list, delete; accepts chunking_model param
-│   │   ├── cards.py       # List, patch, reject, delete, regenerate cards
-│   │   ├── generate.py    # Estimate cost, start job, poll job, background task; specific Anthropic error handling
+│   │   ├── cards.py       # List, patch, reject, delete, regenerate cards; bulk review/delete
+│   │   ├── generate.py    # Estimate cost, start job, poll job, background task; 3 workers + rate-limit retry
 │   │   ├── rules.py       # Rule set CRUD + set-default
+│   │   ├── chat.py        # Help chat: sessions CRUD, send message (Haiku), prompt caching, cost tracking
+│   │   ├── requests.py    # Feature requests CRUD
 │   │   └── export.py      # CSV export by doc or curriculum subtree
 │   └── services/
 │       ├── chunker.py     # parse_and_chunk_docx / parse_and_chunk_html → semantic chunks via Claude; model param threaded through
-│       ├── generator.py   # generate_cards_for_chunk, regenerate_single_card; includes topic_path as "Curriculum context (for reference only)"
+│       ├── generator.py   # generate_cards_for_chunk, regenerate_single_card; ANCHOR_INSTRUCTION + parse_card_output (3-part pipe format)
+│       ├── supplemental_generator.py  # generate vignette + teaching case per condition group
 │       ├── topic_detector.py  # detect_chunk_topics — matches chunks to curriculum tree
 │       └── cost_estimator.py  # Token count approximation × model pricing
 ├── frontend/src/
@@ -47,8 +50,11 @@ v3/
 │   │   └── LibraryPage.tsx     # Curriculum tree editor + rule set CRUD (edit/create via full-screen modal)
 │   ├── components/
 │   │   ├── AlertModal.tsx      # Single-button notification dialog (OK only) — used for generation failures
+│   │   ├── AnkifyModal.tsx     # Full-screen Anki-style card review with cloze reveal (blue underline on reveal)
 │   │   ├── ConfirmModal.tsx    # Two-button confirm dialog (Cancel + action)
+│   │   ├── CostFlash.tsx       # Cost animation: missiles fly from origin to header total counter
 │   │   ├── CurriculumPicker.tsx
+│   │   ├── HelpChat.tsx        # Floating chat panel (expand/collapse, sessions, discuss-cards context, Cmd+Enter to send)
 │   │   ├── SettingsPopover.tsx # Chunking Model + Generation Model + Rule Set selectors
 │   │   └── UsageModal.tsx
 │   ├── api.ts             # Axios wrappers; uploadDocument/pasteDocument accept optional chunkingModel param
@@ -71,8 +77,10 @@ v3/
 
 ## Key Conventions
 - FastAPI routes have NO trailing slash — frontend api.ts must not append `/`
-- Card generation format: `card_number|front_html` (pipe-delimited, one per line)
-- Cloze format: `{{c1::term}}` — rendered with amber highlight in frontend
+- Card generation output format: `number|card text|additional context (optional)` (pipe-delimited, one per line). Parser splits on first `|` for card_number, second `|` separates front_html from extra field.
+- `parse_card_output()` in `generator.py` also runs `fix_markdown_bold()` (converts `**term**` → `<b>term</b>`) and `format_extra_as_list()` (normalizes `;` and `-` delimited lists to `<br>•` bullet format)
+- Cloze format: `{{c1::term}}` — rendered with blue underline in Anki view (table + Ankify modal)
+- All AI calls use `temperature=0.2` for consistent output across runs (chunking, topic detection, card generation, card regeneration)
 - All AI calls go through the Anthropic SDK only (`anthropic.Anthropic`). OpenAI models are NOT supported without a client abstraction layer refactor.
 - Background tasks use FastAPI `BackgroundTasks` with a new `SessionLocal()` (not the request session)
 - SQLite JSON columns (tags, chunk_ids, rule_subset) use SQLAlchemy `JSON` type
@@ -80,6 +88,9 @@ v3/
 - Rules are NOT sent during chunking — only during card generation and regeneration
 - Chunking model is passed from frontend settings → API query/body param → chunker service → Claude call
 - `doc_to_dict()` always computes `total_cards` by summing chunk.card_count across all chunks
+- Generation uses 3 concurrent workers with per-chunk rate-limit retry (20/40/80s exponential backoff, 4 attempts max)
+- `ANCHOR_INSTRUCTION` in `generator.py` is a hardcoded system prompt prepended to all card generation calls — defines anchor rules, cloze-vs-bold decision logic, and the three-part output format. It is NOT a user-editable rule set.
+- Card regeneration (`cards.py`) explicitly fetches `rule_type='generation'` default rule set (not just any `is_default=True`)
 
 ## Adding Models
 Edit `backend/config.py` — the `MODELS` dict is the single source of truth. Add an entry:
@@ -119,8 +130,13 @@ Use `GET /api/usage/summary` to return total and per-operation spend.
 - `DocumentViewerModal.tsx` exists but is not used anywhere — safe to delete.
 - When in doubt about a topic path format, it is `Parent > Child > Leaf` with ` > ` separators (e.g. `Emergency Medicine > Cardiovascular > Endocarditis`).
 - Do not change card output format without updating both `generator.py` parsing logic and the frontend cloze renderer.
+- Card output format is `number|card text|additional context (optional)`. The third part goes to the `extra` field. Do not add more `|` delimiters.
 - `topic_path` is passed to card generation prompts as "Curriculum context (for reference only)" — it's guidance, not a constraint.
-- Card generation injects a hardcoded "anchor term" instruction — the AI must determine the anchor (condition/concept name) from context and NEVER cloze it, so students know what they're being tested on.
+- Card generation injects `ANCHOR_INSTRUCTION` (hardcoded in `generator.py`) — defines anchor rules, cloze-vs-bold decision logic, and formatting rules (`**` is forbidden, use `<b>` HTML). This is prepended to the user's rules before each generation call.
 - Card generation includes sibling chunks (same topic_id) as read-only context to give the AI broader topic awareness.
 - Vignette/teaching case generation uses card front_text + tags + topic_path only (no chunk source text) to avoid parroting study notes.
+- Help Chat (`chat.py`) uses Haiku 4.5, prompt-caches two system blocks (SYSTEM_PROMPT + rules), passes currently selected rule sets from Settings context, tracks cost per message.
+- "Discuss in Chat" sends full card objects (front_html with cloze syntax, tags, extra, vignette, teaching_case) as pending context. Cards are not auto-sent — user types their question first.
+- Chat input is a textarea: Enter = newline, Cmd/Ctrl+Enter = send.
+- Chat panel has expand/collapse mode (fills viewport when expanded).
 - The paste pipeline has debug output (saves raw HTML to `data/debug_paste.html` and prints element levels to stderr) — remove before production.
