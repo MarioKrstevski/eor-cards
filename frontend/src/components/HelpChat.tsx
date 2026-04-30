@@ -11,6 +11,7 @@ interface Message {
 export default function HelpChat() {
   const { selectedRuleSetId, vignetteRuleSetId } = useSettings();
   const [open, setOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [view, setView] = useState<'chat' | 'sessions'>('chat');
 
   // Current chat state
@@ -140,7 +141,7 @@ export default function HelpChat() {
     }
   }
 
-  const isOutdated = sessionVersion < APP_VERSION;
+  const isOutdated = sessionVersion > 0 && sessionVersion < APP_VERSION;
 
   if (!open) {
     return (
@@ -157,7 +158,11 @@ export default function HelpChat() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 w-96 h-[520px] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden">
+    <div className={`fixed z-50 bg-white shadow-2xl border border-gray-200 flex flex-col overflow-hidden transition-all duration-200 ${
+      expanded
+        ? 'inset-4 rounded-2xl'
+        : 'bottom-5 right-5 w-96 h-[520px] rounded-2xl'
+    }`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-blue-50 shrink-0">
         <div className="flex items-center gap-2">
@@ -169,6 +174,21 @@ export default function HelpChat() {
         <div className="flex items-center gap-1">
           {view === 'chat' && (
             <>
+              <button
+                onClick={() => setExpanded(x => !x)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
+                title={expanded ? 'Collapse' : 'Expand'}
+              >
+                {expanded ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 9L4 4m0 0h5m-5 0v5M15 9l5-5m0 0h-5m5 0v5M9 15l-5 5m0 0h5m-5 0v-5M15 15l5 5m0 0h-5m5 0v-5" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5M20 8V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5M20 16v4m0 0h-4m4 0l-5-5" />
+                  </svg>
+                )}
+              </button>
               <button
                 onClick={() => { setView('sessions'); loadSessions(); }}
                 className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100"
