@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { sendChatMessage, getChatSessions, getChatSession, deleteChatSession, createRequest, type ChatSessionSummary } from '../api';
 import { APP_VERSION } from '../version';
 import { useSettings } from '../context/SettingsContext';
@@ -28,6 +28,8 @@ export default function HelpChat() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const [lastCost, setLastCost] = useState<number | null>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -57,6 +59,7 @@ export default function HelpChat() {
         setMessages([userMsg, { role: 'assistant', content: resp.content }]);
         setSessionId(resp.session_id);
         setSessionName(resp.session_name);
+        fireCostFlash(resp.cost_usd ?? 0);
       } catch {
         setMessages([userMsg, { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }]);
       } finally {
@@ -65,6 +68,25 @@ export default function HelpChat() {
     }
     window.addEventListener('discuss-cards', handleDiscussCards);
     return () => window.removeEventListener('discuss-cards', handleDiscussCards);
+  }, []);
+
+  const fireCostFlash = useCallback((cost: number) => {
+    if (cost < 0.000001) return;
+    setLastCost(cost);
+    // Get origin from close button position
+    const btn = closeButtonRef.current;
+    const rect = btn?.getBoundingClientRect();
+    const originX = rect ? rect.left + rect.width / 2 : undefined;
+    const originY = rect ? rect.top + rect.height / 2 : undefined;
+    // After a short pause let the label show, then fire missiles
+    setTimeout(() => {
+      const prevTotal = 0; // App.tsx will re-fetch after animation
+      window.dispatchEvent(new CustomEvent('costIncurred', {
+        detail: { cost, prevTotal, newTotal: prevTotal + cost, originX, originY },
+      }));
+      // Fade out the label as missiles fly
+      setTimeout(() => setLastCost(null), 2500);
+    }, 600);
   }, []);
 
   async function loadSessions() {
@@ -117,6 +139,7 @@ export default function HelpChat() {
       setMessages(prev => [...prev, { role: 'assistant', content: resp.content }]);
       setSessionId(resp.session_id);
       setSessionName(resp.session_name);
+      fireCostFlash(resp.cost_usd ?? 0);
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }]);
     } finally {
@@ -184,7 +207,12 @@ export default function HelpChat() {
               </svg>
             </button>
           )}
-          <button onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
+          {lastCost != null && (
+            <span className="text-[10px] font-mono text-green-600 tabular-nums animate-pulse mr-1">
+              +${lastCost.toFixed(4)}
+            </span>
+          )}
+          <button ref={closeButtonRef} onClick={() => setOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded hover:bg-gray-100">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>

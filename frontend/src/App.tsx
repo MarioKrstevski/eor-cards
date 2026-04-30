@@ -45,6 +45,8 @@ function AppInner() {
     }
     function onComplete(e: Event) {
       setDisplayedCost((e as CustomEvent<{ newTotal: number }>).detail.newTotal);
+      // Re-fetch real total from DB after animation (catches chat costs too)
+      refreshUsage();
     }
     window.addEventListener('costProgress', onProgress);
     window.addEventListener('costComplete', onComplete);

@@ -23,14 +23,14 @@ export default function CostFlash() {
 
   useEffect(() => {
     function handler(e: Event) {
-      const { cost, prevTotal, newTotal } =
-        (e as CustomEvent<{ cost: number; prevTotal: number; newTotal: number }>).detail;
+      const { cost, prevTotal, newTotal, originX, originY } =
+        (e as CustomEvent<{ cost: number; prevTotal: number; newTotal: number; originX?: number; originY?: number }>).detail;
       if (cost < 0.000001) return;
       if (busyRef.current) {
         window.dispatchEvent(new CustomEvent('costComplete', { detail: { newTotal } }));
         return;
       }
-      start(cost, prevTotal, newTotal);
+      start(cost, prevTotal, newTotal, originX, originY);
     }
     window.addEventListener('costIncurred', handler);
     return () => window.removeEventListener('costIncurred', handler);
@@ -99,7 +99,7 @@ export default function CostFlash() {
     timeoutsRef.current.push(tid);
   }
 
-  function start(cost: number, prevTotal: number, newTotal: number) {
+  function start(cost: number, prevTotal: number, newTotal: number, originX?: number, originY?: number) {
     const container = containerRef.current;
     if (!container) return;
     const safeContainer: HTMLDivElement = container;
@@ -108,10 +108,11 @@ export default function CostFlash() {
     timeoutsRef.current = [];
 
     busyRef.current = true;
-    safeContainer.style.display = 'block';
+    // Only show the centered overlay card for the default (non-chat) case
+    if (!originX && !originY) safeContainer.style.display = 'block';
 
-    const sx = window.innerWidth / 2;
-    const sy = window.innerHeight / 2;
+    const sx = originX ?? window.innerWidth / 2;
+    const sy = originY ?? window.innerHeight / 2;
     const ex = window.innerWidth - 90;
     const ey = 22;
 

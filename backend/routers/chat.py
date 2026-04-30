@@ -387,9 +387,26 @@ def _send_message_inner(body: ChatMessageRequest, db: Session):
                 messages=history,
             )
         reply = response.content[0].text
+        # Calculate and log cost
+        from backend.config import compute_cost
+        from backend.models import AIUsageLog
+        usage = response.usage
+        input_tok = getattr(usage, 'input_tokens', 0) or 0
+        output_tok = getattr(usage, 'output_tokens', 0) or 0
+        cache_read = getattr(usage, 'cache_read_input_tokens', 0) or 0
+        cache_write = getattr(usage, 'cache_creation_input_tokens', 0) or 0
+        cost_usd = compute_cost("claude-haiku-4-5-20251001", input_tok, output_tok)
+        db.add(AIUsageLog(
+            operation="chat",
+            model="claude-haiku-4-5-20251001",
+            input_tokens=input_tok,
+            output_tokens=output_tok,
+            cost_usd=cost_usd,
+        ))
     except Exception as e:
         logger.exception("Chat failed")
         reply = f"Sorry, I encountered an error: {str(e)[:200]}"
+        cost_usd = 0.0
 
     history.append({"role": "assistant", "content": reply})
     session.messages = history
@@ -406,4 +423,5 @@ def _send_message_inner(body: ChatMessageRequest, db: Session):
         "content": reply,
         "session_id": session.id,
         "session_name": session.name,
+        "cost_usd": cost_usd,
     }

@@ -354,8 +354,9 @@ export async function sendChatMessage(
   content: string;
   session_id: number;
   session_name: string;
+  cost_usd: number;
 }> {
-  const res = await http.post<{ content: string; session_id: number; session_name: string }>(
+  const res = await http.post<{ content: string; session_id: number; session_name: string; cost_usd: number }>(
     '/chat/send',
     {
       message,
