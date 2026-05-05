@@ -26,12 +26,12 @@ function renderRevealed(html: string): string {
   // Handle wrapped: <b><span ...>{{cN::term}}</span></b>
   let result = html.replace(
     /(?:<b>)?<span[^>]*>\{\{c\d+::([^}]+)\}\}<\/span>(?:<\/b>)?/g,
-    '<span style="color:#1d4ed8;font-weight:700">$1</span>'
+    '<span style="color:#1f77b4;font-weight:700">$1</span>'
   );
   // Handle bare {{cN::term}}
   result = result.replace(
     /\{\{c\d+::([^}]+)\}\}/g,
-    '<span style="color:#1d4ed8;font-weight:700">$1</span>'
+    '<span style="color:#1f77b4;font-weight:700">$1</span>'
   );
   return result;
 }

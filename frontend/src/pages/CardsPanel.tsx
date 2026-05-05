@@ -47,12 +47,12 @@ function renderClozeHtml(html: string): string {
   // Strip wrapped span variants first
   let result = html.replace(
     /(?:<b>)?<span[^>]*>\{\{c\d+::([^}]+)\}\}<\/span>(?:<\/b>)?/g,
-    '<span style="color:#1d4ed8;font-weight:700">$1</span>'
+    '<span style="color:#1f77b4;font-weight:700">$1</span>'
   );
   // Bare cloze
   result = result.replace(
     /\{\{c\d+::([^}]+)\}\}/g,
-    '<span style="color:#1d4ed8;font-weight:700">$1</span>'
+    '<span style="color:#1f77b4;font-weight:700">$1</span>'
   );
   return result;
 }

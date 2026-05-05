@@ -10,7 +10,7 @@ NEVER cloze the anchor — it must remain readable so the student knows what \
 they are studying and can recall the associated facts.
 
 CLOZE VS BOLD DECISION RULE:
-- CLOZE ({{cN::term}}) = any independently testable clinical element: anatomical structures, \
+- CLOZE ({{c1::term}}) = any independently testable clinical element: anatomical structures, \
 physiological terms, condition modifiers, dysfunction types, drug names, lab values, time frames, \
 mechanisms, findings. If a student could be tested on recalling it, it must be clozed.
 - <b>bold HTML tag</b> = ONLY for structural orientation labels (section headers within a card) \
@@ -32,6 +32,8 @@ The card text (between first and second |) must contain ONLY the primary testabl
 The fourth field (after the third |) is a source reference indicating which [P1], [P2], etc. \
 paragraph markers from the source text the card was derived from. Use format source:P3 (single), \
 source:P3-P5 (contiguous range), or source:P3,P7 (non-contiguous). This field is required. \
+CLOZE INDEX RULE — ABSOLUTE: Every card uses {{c1::term}} for ALL cloze deletions. \
+Always c1, regardless of the card number. Never use c2, c3, c4, etc. \
 Example: 1|Primary card text with {{c1::clozes}}.|Other items: item A, item B, item C|source:P1-P2"""
 
 
@@ -165,19 +167,14 @@ def regenerate_single_card(
         model=model,
         max_tokens=512,
         temperature=0,
+        system=[{
+            "type": "text",
+            "text": ANCHOR_INSTRUCTION + "\n\n" + rules_text,
+            "cache_control": {"type": "ephemeral"},
+        }],
         messages=[{
             "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": ANCHOR_INSTRUCTION + "\n\n" + rules_text + "\n\n---\n\n",
-                    "cache_control": {"type": "ephemeral"},
-                },
-                {
-                    "type": "text",
-                    "text": chunk_prompt,
-                },
-            ],
+            "content": chunk_prompt,
         }],
     )
     raw = response.content[0].text.strip()
@@ -231,26 +228,21 @@ def generate_cards_for_chunk(
         f"Generate the cards following ALL the rules above. Output in the exact format:\n"
         f"number|cloze card text|additional context (optional)|source:P1-P3\n\n"
         f"If you cannot confidently generate quality cards for this content, output NEEDS_REVIEW on its own line at the end.\n"
-        f"Remember: card N uses only cN for all clozes."
+        f"Remember: ALL clozes on every card use {{{{c1::term}}}} — always c1, regardless of card number."
     )
 
     response = client.messages.create(
         model=model,
         max_tokens=4096,
         temperature=0,
+        system=[{
+            "type": "text",
+            "text": ANCHOR_INSTRUCTION + "\n\n" + rules_text,
+            "cache_control": {"type": "ephemeral"},
+        }],
         messages=[{
             "role": "user",
-            "content": [
-                {
-                    "type": "text",
-                    "text": ANCHOR_INSTRUCTION + "\n\n" + rules_text + "\n\n---\n\n",
-                    "cache_control": {"type": "ephemeral"},
-                },
-                {
-                    "type": "text",
-                    "text": chunk_prompt,
-                },
-            ],
+            "content": chunk_prompt,
         }],
     )
     raw = response.content[0].text.strip()
