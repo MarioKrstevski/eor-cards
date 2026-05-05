@@ -8,8 +8,6 @@ import {
   getCurriculumCoverage,
   uploadDocument,
   pasteDocument,
-  uploadDocumentAuto,
-  pasteDocumentAuto,
   uploadDocumentSimple,
   pasteDocumentSimple,
   getDocument,
@@ -810,7 +808,7 @@ interface WorkspacePageProps {
 }
 
 export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
-  const { selectedModel, selectedRuleSetId, vignetteRuleSetId } = useSettings();
+  const { selectedModel, selectedRuleSetId } = useSettings();
   const location = useLocation();
 
   // Documents
