@@ -1178,6 +1178,7 @@ def _run_simple_pipeline(
                     source_ref=card_data.get("source_ref"),
                     tags=tags,
                     needs_review=False,
+                    ref_img=target_chunk.ref_img if target_chunk else None,
                     note_id=note_id_base + note_id_counter,
                 )
                 note_id_counter += 1
