@@ -2,7 +2,7 @@ import json
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import cast, String
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, load_only
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
@@ -52,7 +52,6 @@ def card_to_dict(card: Card) -> dict:
         "updated_at": card.updated_at.isoformat() if card.updated_at else None,
         "topic_path": card.chunk.topic_path if card.chunk else None,
         "chunk_heading": card.chunk.heading if card.chunk else None,
-        "chunk_source_html": card.chunk.source_html if card.chunk else None,
     }
 
 
@@ -64,9 +63,14 @@ def list_cards(
     is_reviewed: Optional[bool] = None,
     tag: Optional[str] = None,
     search_q: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
     db: Session = Depends(get_db),
 ):
-    q = db.query(Card).options(joinedload(Card.document), joinedload(Card.chunk))
+    q = db.query(Card).options(
+        joinedload(Card.document),
+        joinedload(Card.chunk).load_only(Chunk.topic_path, Chunk.heading, Chunk.chunk_index),
+    )
     if document_id:
         q = q.filter(Card.document_id == document_id)
     if chunk_id:
@@ -82,12 +86,12 @@ def list_cards(
         q = q.filter(Card.front_text.ilike(q_pattern))
     q = q.join(Card.chunk)
     if document_id or chunk_id:
-        # Document view: follow document flow
         q = q.order_by(Chunk.chunk_index, Card.card_number)
     else:
-        # Topic/search view: group by topic, then document order within
         q = q.order_by(Chunk.topic_path, Card.document_id, Card.card_number)
-    return [card_to_dict(c) for c in q.all()]
+    total = q.count()
+    cards = q.offset(offset).limit(limit).all()
+    return {"cards": [card_to_dict(c) for c in cards], "total": total, "limit": limit, "offset": offset}
 
 
 @router.patch("/{card_id}")

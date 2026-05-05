@@ -168,6 +168,13 @@ export async function pasteDocumentAuto(params: {
 
 // ─── Cards ────────────────────────────────────────────────────────────────────
 
+export interface PaginatedCards {
+  cards: Card[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export async function getCards(params?: {
   document_id?: number;
   chunk_id?: number;
@@ -175,8 +182,10 @@ export async function getCards(params?: {
   is_reviewed?: boolean;
   tag?: string;
   search_q?: string;
-}): Promise<Card[]> {
-  const res = await http.get<Card[]>('/cards', { params });
+  limit?: number;
+  offset?: number;
+}): Promise<PaginatedCards> {
+  const res = await http.get<PaginatedCards>('/cards', { params: { limit: 100, offset: 0, ...params } });
   return res.data;
 }
 

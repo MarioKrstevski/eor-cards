@@ -683,15 +683,16 @@ export default function CardsPanel({
             if (!silent) setCardsLoading(false);
             return;
           }
-          rawCards = await getCards({ document_id: docId });
+          const resp = await getCards({ document_id: docId, limit: 5000 });
+          rawCards = resp.cards;
           // Cache the full doc set
           allDocCardsRef.current = { docId, cards: rawCards };
           if (chunk != null) {
             rawCards = rawCards.filter(c => c.chunk_id === chunk);
           }
         } else if (topicPathFilter) {
-          rawCards = await getCards();
-          rawCards = rawCards.filter(c => c.topic_path && c.topic_path.startsWith(topicPathFilter));
+          const topicResp = await getCards({ limit: 5000 });
+          rawCards = topicResp.cards.filter(c => c.topic_path && c.topic_path.startsWith(topicPathFilter));
         } else {
           rawCards = [];
         }
