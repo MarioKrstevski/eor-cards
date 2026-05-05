@@ -851,23 +851,18 @@ DOCUMENT HEADINGS (in document order):
 {heading_block}
 
 For each heading, assign the best matching curriculum leaf.
-Return a JSON array:
+Return a COMPACT JSON array — only include heading_index, topic_id, and confidence to minimize output size:
 [
-  {{
-    "heading_index": <int>,
-    "topic_id": <int>,
-    "topic_name": "<leaf name>",
-    "topic_path": "<full path>",
-    "confidence": "high" | "medium" | "low"
-  }},
+  [<heading_index>, <topic_id_or_null>, "<h|m|l>"],
   ...
 ]
 
+Use "h" for high confidence, "m" for medium, "l" for low.
+
 Rules:
 - Every heading must appear in the output
-- If a heading is a top-level category/title (e.g., "CARDIOVASCULAR") that doesn't map to a specific leaf, set topic_id to the FIRST leaf that falls under that category, with confidence "medium"
-- If a heading truly has no matching topic, set topic_id to null with confidence "low"
-- Prefer "high" confidence for clear matches, "medium" for reasonable but not certain, "low" for guesses
+- If a heading is a top-level category/title (e.g., "CARDIOVASCULAR") that doesn't map to a specific leaf, use the FIRST leaf id under that category, with "m"
+- If a heading truly has no matching topic, use null for topic_id with "l"
 
 Return ONLY the JSON array, no other text."""
 
@@ -900,9 +895,27 @@ Return ONLY the JSON array, no other text."""
         raise ValueError(f"Topic slicing returned non-JSON: {e}") from e
 
     # ── 3. Build index lookup for fast access ────────────────────────────
+    # Build a topic_id → {name, path} lookup from curriculum_leaves
+    leaf_lookup = {leaf["id"]: leaf for leaf in curriculum_leaves}
+    confidence_map = {"h": "high", "m": "medium", "l": "low"}
+
     mapping_by_index = {}
-    for m in heading_mappings:
-        mapping_by_index[m["heading_index"]] = m
+    for item in heading_mappings:
+        # Compact format: [heading_index, topic_id_or_null, "h"|"m"|"l"]
+        if isinstance(item, list):
+            h_idx = item[0]
+            t_id = item[1]
+            conf = confidence_map.get(item[2], "low") if len(item) > 2 else "low"
+            leaf = leaf_lookup.get(t_id, {})
+            mapping_by_index[h_idx] = {
+                "heading_index": h_idx,
+                "topic_id": t_id,
+                "topic_path": leaf.get("path"),
+                "confidence": conf,
+            }
+        else:
+            # Legacy dict format fallback
+            mapping_by_index[item["heading_index"]] = item
 
     # ── 4. Slice elements into topic chunks ──────────────────────────────
     # Each heading starts a new chunk; everything between two headings belongs
