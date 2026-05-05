@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 # Rough estimate: 4 chars ≈ 1 token
 CHARS_PER_TOKEN = 4
-MAX_BATCH_TOKENS = 40_000  # leave room for system prompt + output
+# Keep batches small enough that each produces a reasonable number of cards
+# ~10K input tokens ≈ 5-8 sections ≈ 50-100 cards output
+MAX_BATCH_TOKENS = 10_000
 # Only split on headings at level <= this threshold for chunking
 MAJOR_HEADING_LEVEL = 2
 # Minimum tokens for a chunk to stand alone (otherwise merge with next)
@@ -359,7 +361,7 @@ def generate_batch(
 
     response = client.messages.create(
         model=model,
-        max_tokens=8192,
+        max_tokens=16384,
         temperature=0,
         system=[{
             "type": "text",
@@ -371,6 +373,14 @@ def generate_batch(
 
     raw = response.content[0].text.strip()
     cards = parse_batch_output(raw)
+
+    # Log if output was truncated (model hit max_tokens before finishing)
+    if response.stop_reason == "max_tokens":
+        logger.warning(
+            "Batch generation hit max_tokens limit (%d cards parsed so far). "
+            "Some content may not have been fully covered.",
+            len(cards),
+        )
 
     usage = {
         "input_tokens": response.usage.input_tokens,
