@@ -26,7 +26,7 @@ MODELS = {
 }
 
 DEFAULT_MODEL = "claude-sonnet-4-6"          # default for card generation
-DEFAULT_CHUNKING_MODEL = "claude-sonnet-4-6"  # default for document chunking
+DEFAULT_CHUNKING_MODEL = "claude-haiku-4-5-20251001"  # default for document chunking
 AVG_OUTPUT_TOKENS_PER_CHUNK = 800
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")

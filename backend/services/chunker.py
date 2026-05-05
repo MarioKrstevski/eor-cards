@@ -318,7 +318,7 @@ Return ONLY the JSON array, no other text."""
     return prompt
 
 
-def call_claude_for_chunking(elements: list, images: list, rules_md_path: Optional[str], client: anthropic.Anthropic, model: str = "claude-sonnet-4-6") -> tuple[list, dict]:
+def call_claude_for_chunking(elements: list, images: list, rules_md_path: Optional[str], client: anthropic.Anthropic, model: str = "claude-haiku-4-5-20251001") -> tuple[list, dict]:
     """Call Claude API to determine chunk boundaries. Client is injected (not created here).
     Returns (chunks_list, usage_dict) where usage_dict = {"input_tokens": ..., "output_tokens": ...}.
     """
@@ -763,7 +763,7 @@ def parse_html_to_elements(html: str) -> tuple[list, list]:
     return elements, all_images
 
 
-def parse_and_chunk_html(html: str, client: anthropic.Anthropic, model: str = "claude-sonnet-4-6", curriculum_leaves: list[dict] = None) -> tuple[list, dict]:
+def parse_and_chunk_html(html: str, client: anthropic.Anthropic, model: str = "claude-haiku-4-5-20251001", curriculum_leaves: list[dict] = None) -> tuple[list, dict]:
     """Parse clipboard HTML and chunk it semantically.
 
     When curriculum_leaves is provided, uses topic-first slicing (slice_by_topics)
@@ -787,7 +787,7 @@ def slice_by_topics(
     elements: list,
     curriculum_leaves: list[dict],  # [{id, name, path, sort_order}, ...]
     client: anthropic.Anthropic,
-    model: str = "claude-sonnet-4-6",
+    model: str = "claude-haiku-4-5-20251001",
 ) -> tuple[list[dict], dict]:
     """Topic-first slicing: match document headings against curriculum leaves to slice
     the document into topic-aligned chunks. Returns (chunks, usage).
@@ -918,13 +918,12 @@ Return ONLY the JSON array, no other text."""
             mapping_by_index[item["heading_index"]] = item
 
     # ── 4. Slice elements into topic chunks ──────────────────────────────
-    # Each heading starts a new chunk; everything between two headings belongs
-    # to the first heading's topic.
+    # First, build per-heading segments, then MERGE consecutive segments
+    # that share the same topic_id into a single chunk (one chunk per topic).
     heading_indices = sorted(mapping_by_index.keys())
-    chunks = []
+    segments = []  # raw per-heading segments before merging
 
     for pos, h_idx in enumerate(heading_indices):
-        # Determine the element range for this chunk
         start = h_idx
         if pos + 1 < len(heading_indices):
             end = heading_indices[pos + 1] - 1
@@ -935,9 +934,50 @@ Return ONLY the JSON array, no other text."""
             continue
 
         mapping = mapping_by_index[h_idx]
+        segments.append({
+            "start": start,
+            "end": end,
+            "heading_text": elements[h_idx]["text"],
+            "topic_id": mapping.get("topic_id"),
+            "topic_path": mapping.get("topic_path"),
+            "confidence": mapping.get("confidence", "low"),
+        })
+
+    # Handle elements before the first heading (preamble)
+    if heading_indices and heading_indices[0] > 0:
+        preamble_end = heading_indices[0] - 1
+        preamble_elems = elements[0: preamble_end + 1]
+        if any(e["text"].strip() for e in preamble_elems):
+            first_mapping = mapping_by_index[heading_indices[0]]
+            segments.insert(0, {
+                "start": 0,
+                "end": preamble_end,
+                "heading_text": "Introduction",
+                "topic_id": first_mapping.get("topic_id"),
+                "topic_path": first_mapping.get("topic_path"),
+                "confidence": "low",
+            })
+
+    # Merge consecutive segments with the same topic_id into one chunk
+    merged = []
+    for seg in segments:
+        if merged and merged[-1]["topic_id"] is not None and merged[-1]["topic_id"] == seg["topic_id"]:
+            # Extend the previous chunk
+            merged[-1]["end"] = seg["end"]
+            # Keep the lowest confidence across merged segments
+            conf_order = {"low": 0, "medium": 1, "high": 2}
+            if conf_order.get(seg["confidence"], 0) < conf_order.get(merged[-1]["confidence"], 2):
+                merged[-1]["confidence"] = seg["confidence"]
+        else:
+            merged.append(dict(seg))
+
+    # Build final chunk dicts from merged segments
+    chunks = []
+    for seg in merged:
+        start, end = seg["start"], seg["end"]
         chunk_elements = elements[start: end + 1]
 
-        # Infer content_type from elements (same logic as heuristic_chunk)
+        # Infer content_type from elements
         has_bullets = any(e["type"] == "bullet" for e in chunk_elements)
         has_paragraphs = any(e["type"] == "paragraph" for e in chunk_elements)
         has_table = any(e["type"] == "table" for e in chunk_elements)
@@ -954,12 +994,8 @@ Return ONLY the JSON array, no other text."""
         else:
             content_type = "paragraph"
 
-        topic_id = mapping.get("topic_id")
-        topic_path = mapping.get("topic_path")
-        confidence = mapping.get("confidence", "low")
-
-        # Use the document heading text as the chunk heading
-        heading_text = elements[h_idx]["text"]
+        # Use topic path leaf name as heading, fallback to first heading in segment
+        heading_text = seg.get("topic_path", "").rsplit(" > ", 1)[-1] if seg.get("topic_path") else seg["heading_text"]
 
         chunk = {
             "chunk_index": len(chunks),
@@ -967,33 +1003,12 @@ Return ONLY the JSON array, no other text."""
             "content_type": content_type,
             "rule_subset": ["cloze_boundaries"],
             "element_range": [start, end],
-            "topic_id": topic_id,
-            "topic_path": topic_path,
-            "needs_review": confidence == "low",
-            "topic_confidence": confidence,
+            "topic_id": seg["topic_id"],
+            "topic_path": seg["topic_path"],
+            "needs_review": seg["confidence"] == "low",
+            "topic_confidence": seg["confidence"],
         }
         chunks.append(chunk)
-
-    # Handle elements before the first heading (preamble)
-    if heading_indices and heading_indices[0] > 0:
-        preamble_end = heading_indices[0] - 1
-        preamble_elems = elements[0: preamble_end + 1]
-        # Skip if it's all empty/whitespace
-        if any(e["text"].strip() for e in preamble_elems):
-            # Assign preamble to the same topic as the first heading
-            first_mapping = mapping_by_index[heading_indices[0]]
-            preamble_chunk = {
-                "chunk_index": -1,  # will be renumbered below
-                "heading": "Introduction",
-                "content_type": "paragraph",
-                "rule_subset": ["cloze_boundaries"],
-                "element_range": [0, preamble_end],
-                "topic_id": first_mapping.get("topic_id"),
-                "topic_path": first_mapping.get("topic_path"),
-                "needs_review": True,
-                "topic_confidence": "low",
-            }
-            chunks.insert(0, preamble_chunk)
 
     # Renumber chunk indices
     for i, chunk in enumerate(chunks):
@@ -1171,7 +1186,7 @@ def _build_heuristic_chunk(chunk_idx, start, end, heading, elems):
     }
 
 
-def parse_and_chunk_docx(docx_path: str, img_dir: str, client: anthropic.Anthropic, rules_md_path: Optional[str] = None, model: str = "claude-sonnet-4-6", curriculum_leaves: list[dict] = None) -> tuple[list[dict], dict]:
+def parse_and_chunk_docx(docx_path: str, img_dir: str, client: anthropic.Anthropic, rules_md_path: Optional[str] = None, model: str = "claude-haiku-4-5-20251001", curriculum_leaves: list[dict] = None) -> tuple[list[dict], dict]:
     """Full pipeline: parse docx -> chunk -> return (assembled chunks, usage).
 
     When curriculum_leaves is provided, uses topic-first slicing (slice_by_topics)
