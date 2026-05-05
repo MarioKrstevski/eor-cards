@@ -10,6 +10,8 @@ import {
   pasteDocument,
   uploadDocumentAuto,
   pasteDocumentAuto,
+  uploadDocumentSimple,
+  pasteDocumentSimple,
   getDocument,
   getRuleSets,
   startGeneration,
@@ -700,7 +702,7 @@ function PostGenScreen({ docId, totalCards, onSkip, refreshUsage }: PostGenScree
   async function handleGenerateClick() {
     setLoading(true);
     try {
-      const resp = await getCards({ document_id: docId, limit: 5000 });
+      const resp = await getCards({ document_id: docId, limit: 200 });
       const cardIds = resp.cards.filter((c) => c.status === 'active').map((c) => c.id);
       if (cardIds.length === 0) { setLoading(false); return; }
 
@@ -1100,10 +1102,9 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     setUploading(true);
     try {
       if (fullAuto && selectedRuleSetId) {
-        const result = await uploadDocumentAuto(file, {
+        const result = await uploadDocumentSimple(file, {
           model: selectedModel,
           rule_set_id: selectedRuleSetId,
-          supplemental_rule_set_id: vignetteRuleSetId,
         });
         await fetchDocuments();
         startAutoPolling(result.job_id, result.document_id);
@@ -1236,12 +1237,11 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     setPasting(true);
     try {
       if (fullAuto && selectedRuleSetId) {
-        const result = await pasteDocumentAuto({
+        const result = await pasteDocumentSimple({
           html: pastedHtml,
           name: pasteName.trim(),
           model: selectedModel,
           rule_set_id: selectedRuleSetId,
-          supplemental_rule_set_id: vignetteRuleSetId,
         });
         await fetchDocuments();
         setShowPasteModal(false);

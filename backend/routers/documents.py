@@ -474,6 +474,13 @@ class PasteAutoRequest(BaseModel):
     supplemental_rule_set_id: Optional[int] = None
 
 
+class PasteSimpleRequest(BaseModel):
+    html: str
+    name: str
+    model: str = DEFAULT_MODEL
+    rule_set_id: int
+
+
 @router.post("/upload-auto", status_code=201)
 async def upload_document_auto(
     background_tasks: BackgroundTasks,
@@ -912,6 +919,331 @@ def _run_full_auto_pipeline(
             _fail_auto_job(db, job_id, f"Anthropic API error ({e.status_code}): {e.message}")
     except Exception as e:
         logger.exception("_run_full_auto_pipeline failed")
+        _fail_auto_job(db, job_id, str(e))
+    finally:
+        db.close()
+
+
+# ── Simple Batch Pipeline ──────────────────────────────────────────────────────
+
+
+@router.post("/upload-simple", status_code=201)
+async def upload_document_simple(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    model: str = Form(DEFAULT_MODEL),
+    rule_set_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Upload .docx → deterministic split → batched card generation (simplified pipeline)."""
+    if not file.filename.endswith(".docx"):
+        raise HTTPException(422, "Only .docx files supported")
+
+    rs = db.get(RuleSet, rule_set_id)
+    if not rs:
+        raise HTTPException(404, "Rule set not found")
+
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    stem, ext = os.path.splitext(file.filename)
+    unique_filename = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
+    save_path = os.path.join(UPLOAD_DIR, unique_filename)
+    with open(save_path, "wb") as f:
+        f.write(await file.read())
+
+    doc = Document(
+        filename=unique_filename,
+        original_name=file.filename,
+        chunk_count=0,
+    )
+    db.add(doc)
+    db.flush()
+
+    job = GenerationJob(
+        document_id=doc.id,
+        job_type="simple_batch",
+        scope="all",
+        rule_set_id=rule_set_id,
+        model=model,
+        status=JobStatus.pending,
+        total_chunks=0,
+        processed_chunks=0,
+        total_cards=0,
+        pipeline_step="parsing",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(doc)
+    db.refresh(job)
+
+    background_tasks.add_task(
+        _run_simple_pipeline,
+        doc.id,
+        job.id,
+        save_path,
+        None,
+        model,
+        rule_set_id,
+        True,
+    )
+
+    return {"document_id": doc.id, "job_id": job.id}
+
+
+@router.post("/paste-simple", status_code=201)
+async def paste_document_simple(
+    body: PasteSimpleRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Paste HTML → deterministic split → batched card generation (simplified pipeline)."""
+    if not body.html or not body.html.strip():
+        raise HTTPException(422, "No HTML content provided")
+    if not body.name or not body.name.strip():
+        raise HTTPException(422, "Document name is required")
+
+    rs = db.get(RuleSet, body.rule_set_id)
+    if not rs:
+        raise HTTPException(404, "Rule set not found")
+
+    doc = Document(
+        filename=f"paste_{uuid.uuid4().hex[:8]}.html",
+        original_name=body.name.strip(),
+        chunk_count=0,
+    )
+    db.add(doc)
+    db.flush()
+
+    job = GenerationJob(
+        document_id=doc.id,
+        job_type="simple_batch",
+        scope="all",
+        rule_set_id=body.rule_set_id,
+        model=body.model,
+        status=JobStatus.pending,
+        total_chunks=0,
+        processed_chunks=0,
+        total_cards=0,
+        pipeline_step="parsing",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(doc)
+    db.refresh(job)
+
+    background_tasks.add_task(
+        _run_simple_pipeline,
+        doc.id,
+        job.id,
+        None,
+        body.html,
+        body.model,
+        body.rule_set_id,
+        False,
+    )
+
+    return {"document_id": doc.id, "job_id": job.id}
+
+
+def _run_simple_pipeline(
+    doc_id: int,
+    job_id: int,
+    file_path: Optional[str],
+    html: Optional[str],
+    model: str,
+    rule_set_id: int,
+    is_docx: bool,
+):
+    """Background task: simplified pipeline — deterministic parse → batch generate."""
+    from backend.services.batch_generator import (
+        build_sections_from_elements,
+        pack_batches,
+        generate_batch,
+    )
+    from backend.services.chunker import parse_docx, parse_html_to_elements, heuristic_chunk
+
+    db = SessionLocal()
+    try:
+        job = db.get(GenerationJob, job_id)
+        job.status = JobStatus.running
+        job.started_at = utcnow()
+        job.pipeline_step = "parsing"
+        db.commit()
+
+        # ── Step 1: Parse document deterministically (no AI) ─────────────────
+        if is_docx:
+            img_dir = os.path.join(DATA_DIR, "chunk_images")
+            os.makedirs(img_dir, exist_ok=True)
+            elements, images = parse_docx(file_path, img_dir)
+        else:
+            elements, images = parse_html_to_elements(html)
+
+        if not elements:
+            _fail_auto_job(db, job_id, "No content could be extracted from the document")
+            return
+
+        # ── Step 2: Build sections and batches ───────────────────────────────
+        job.pipeline_step = "batching"
+        db.commit()
+
+        sections = build_sections_from_elements(elements)
+
+        # Create chunks in DB using heuristic splitting (for UI display & card FK)
+        heuristic_chunks = heuristic_chunk(elements)
+        doc = db.get(Document, doc_id)
+        doc.chunk_count = len(heuristic_chunks)
+
+        chunk_objs = []
+        for c in heuristic_chunks:
+            chunk = Chunk(
+                document_id=doc_id,
+                chunk_index=c["chunk_index"],
+                heading=c["heading"],
+                content_type=c["content_type"],
+                source_text=c["source_text"],
+                source_html=c["source_html"],
+                ref_img=c.get("ref_img"),
+                rule_subset=c.get("rule_subset", []),
+            )
+            db.add(chunk)
+            chunk_objs.append(chunk)
+        db.commit()
+        for ch in chunk_objs:
+            db.refresh(ch)
+
+        # Build curriculum tree string for the prompt
+        curriculum_nodes = db.query(Curriculum).all()
+        curriculum_tree = "\n".join(
+            f"  {n.path}" for n in curriculum_nodes if n.path
+        ) if curriculum_nodes else "No curriculum loaded"
+
+        # Pack sections into batches
+        batches = pack_batches(sections)
+        job.total_chunks = len(batches)
+        db.commit()
+
+        # ── Step 3: Generate cards in batches ────────────────────────────────
+        job.pipeline_step = "generating"
+        db.commit()
+
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        rs = db.get(RuleSet, rule_set_id)
+        rules_text = rs.content
+
+        total_cards = 0
+        total_input_tokens = 0
+        total_output_tokens = 0
+        note_id_base = int(time.time() * 1000)
+        note_id_counter = 0
+
+        # Build heading→chunk lookup for card assignment
+        chunk_by_heading = {}
+        for ch in chunk_objs:
+            chunk_by_heading[ch.heading.lower().strip()] = ch
+        default_chunk = chunk_objs[0] if chunk_objs else None
+
+        for batch_idx, batch in enumerate(batches):
+            cards_data = None
+            usage = None
+            for attempt in range(4):
+                try:
+                    cards_data, usage = generate_batch(
+                        client, batch, rules_text, curriculum_tree, model
+                    )
+                    break
+                except anthropic.RateLimitError:
+                    if attempt == 3:
+                        raise
+                    wait = 20 * (2 ** attempt)
+                    logger.warning("Rate limit on batch %d, retrying in %ds", batch_idx, wait)
+                    time.sleep(wait)
+
+            if cards_data is None:
+                continue
+
+            # Save cards — try to assign to matching chunk by section heading
+            batch_headings = [s["heading"].lower().strip() for s in batch]
+            batch_chunk = None
+            for bh in batch_headings:
+                if bh in chunk_by_heading:
+                    batch_chunk = chunk_by_heading[bh]
+                    break
+            if not batch_chunk:
+                batch_chunk = default_chunk
+
+            for card_data in cards_data:
+                topic_path = card_data.get("topic_path")
+                tags = topic_path.split(" > ") if topic_path and topic_path != "Uncategorized" else []
+
+                # Try to find better chunk match from topic
+                target_chunk = batch_chunk
+                if topic_path:
+                    leaf_name = topic_path.rsplit(" > ", 1)[-1].lower().strip()
+                    if leaf_name in chunk_by_heading:
+                        target_chunk = chunk_by_heading[leaf_name]
+
+                card = Card(
+                    chunk_id=target_chunk.id if target_chunk else chunk_objs[0].id,
+                    document_id=doc_id,
+                    card_number=card_data["card_number"],
+                    front_html=card_data["front_html"],
+                    front_text=card_data["front_text"],
+                    extra=card_data.get("extra"),
+                    source_ref=card_data.get("source_ref"),
+                    tags=tags,
+                    needs_review=False,
+                    note_id=note_id_base + note_id_counter,
+                )
+                note_id_counter += 1
+                db.add(card)
+                total_cards += 1
+
+            total_input_tokens += usage["input_tokens"]
+            total_output_tokens += usage["output_tokens"]
+            job.processed_chunks = batch_idx + 1
+            db.commit()
+
+        # Update chunk card counts
+        for ch in chunk_objs:
+            ch.card_count = db.query(Card).filter(Card.chunk_id == ch.id).count()
+        db.commit()
+
+        # Log usage
+        db.add(AIUsageLog(
+            operation="card_generation",
+            model=model,
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            cost_usd=compute_cost(model, total_input_tokens, total_output_tokens),
+            document_id=doc_id,
+            job_id=job_id,
+        ))
+
+        job.pipeline_step = "done"
+        job.status = JobStatus.done
+        job.total_cards = total_cards
+        job.actual_input_tokens = total_input_tokens
+        job.actual_output_tokens = total_output_tokens
+        job.finished_at = utcnow()
+        db.commit()
+
+    except anthropic.AuthenticationError:
+        _fail_auto_job(db, job_id, "Anthropic API key is invalid or missing.")
+    except anthropic.PermissionDeniedError as e:
+        msg = str(e).lower()
+        if "credit" in msg or "billing" in msg or "balance" in msg or "quota" in msg:
+            _fail_auto_job(db, job_id, "Your Anthropic account is out of credits.")
+        else:
+            _fail_auto_job(db, job_id, f"Anthropic permission error: {e}")
+    except anthropic.RateLimitError:
+        _fail_auto_job(db, job_id, "Rate limit reached after all retries.")
+    except anthropic.APIStatusError as e:
+        msg = str(e).lower()
+        if "credit" in msg or "billing" in msg or "balance" in msg:
+            _fail_auto_job(db, job_id, "Your Anthropic account is out of credits.")
+        else:
+            _fail_auto_job(db, job_id, f"Anthropic API error ({e.status_code}): {e.message}")
+    except Exception as e:
+        logger.exception("_run_simple_pipeline failed")
         _fail_auto_job(db, job_id, str(e))
     finally:
         db.close()
