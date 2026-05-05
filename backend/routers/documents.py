@@ -479,6 +479,7 @@ class PasteSimpleRequest(BaseModel):
     name: str
     model: str = DEFAULT_MODEL
     rule_set_id: int
+    supplemental_rule_set_id: Optional[int] = None
 
 
 @router.post("/upload-auto", status_code=201)
@@ -933,6 +934,7 @@ async def upload_document_simple(
     file: UploadFile = File(...),
     model: str = Form(DEFAULT_MODEL),
     rule_set_id: int = Form(...),
+    supplemental_rule_set_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Upload .docx → deterministic split → batched card generation (simplified pipeline)."""
@@ -983,6 +985,7 @@ async def upload_document_simple(
         None,
         model,
         rule_set_id,
+        supplemental_rule_set_id,
         True,
     )
 
@@ -1038,6 +1041,7 @@ async def paste_document_simple(
         body.html,
         body.model,
         body.rule_set_id,
+        body.supplemental_rule_set_id,
         False,
     )
 
@@ -1051,15 +1055,18 @@ def _run_simple_pipeline(
     html: Optional[str],
     model: str,
     rule_set_id: int,
+    supplemental_rule_set_id: Optional[int],
     is_docx: bool,
 ):
-    """Background task: simplified pipeline — deterministic parse → batch generate."""
+    """Background task: simplified pipeline — deterministic parse → batch generate → supplementals."""
     from backend.services.batch_generator import (
         build_sections_from_elements,
+        build_chunks_from_sections,
         pack_batches,
         generate_batch,
+        assign_card_to_chunk,
     )
-    from backend.services.chunker import parse_docx, parse_html_to_elements, heuristic_chunk
+    from backend.services.chunker import parse_docx, parse_html_to_elements
 
     db = SessionLocal()
     try:
@@ -1081,19 +1088,19 @@ def _run_simple_pipeline(
             _fail_auto_job(db, job_id, "No content could be extracted from the document")
             return
 
-        # ── Step 2: Build sections and batches ───────────────────────────────
+        # ── Step 2: Build sections and chunks ────────────────────────────────
         job.pipeline_step = "batching"
         db.commit()
 
         sections = build_sections_from_elements(elements)
 
-        # Create chunks in DB using heuristic splitting (for UI display & card FK)
-        heuristic_chunks = heuristic_chunk(elements)
+        # Create chunks in DB using major-heading splitting (fewer, larger chunks)
+        chunk_dicts = build_chunks_from_sections(sections, elements)
         doc = db.get(Document, doc_id)
-        doc.chunk_count = len(heuristic_chunks)
+        doc.chunk_count = len(chunk_dicts)
 
         chunk_objs = []
-        for c in heuristic_chunks:
+        for c in chunk_dicts:
             chunk = Chunk(
                 document_id=doc_id,
                 chunk_index=c["chunk_index"],
@@ -1135,12 +1142,6 @@ def _run_simple_pipeline(
         note_id_base = int(time.time() * 1000)
         note_id_counter = 0
 
-        # Build heading→chunk lookup for card assignment
-        chunk_by_heading = {}
-        for ch in chunk_objs:
-            chunk_by_heading[ch.heading.lower().strip()] = ch
-        default_chunk = chunk_objs[0] if chunk_objs else None
-
         for batch_idx, batch in enumerate(batches):
             cards_data = None
             usage = None
@@ -1160,26 +1161,12 @@ def _run_simple_pipeline(
             if cards_data is None:
                 continue
 
-            # Save cards — try to assign to matching chunk by section heading
-            batch_headings = [s["heading"].lower().strip() for s in batch]
-            batch_chunk = None
-            for bh in batch_headings:
-                if bh in chunk_by_heading:
-                    batch_chunk = chunk_by_heading[bh]
-                    break
-            if not batch_chunk:
-                batch_chunk = default_chunk
-
             for card_data in cards_data:
                 topic_path = card_data.get("topic_path")
                 tags = topic_path.split(" > ") if topic_path and topic_path != "Uncategorized" else []
 
-                # Try to find better chunk match from topic
-                target_chunk = batch_chunk
-                if topic_path:
-                    leaf_name = topic_path.rsplit(" > ", 1)[-1].lower().strip()
-                    if leaf_name in chunk_by_heading:
-                        target_chunk = chunk_by_heading[leaf_name]
+                # Map card to correct chunk using source paragraph numbers
+                target_chunk = assign_card_to_chunk(card_data, sections, chunk_objs)
 
                 card = Card(
                     chunk_id=target_chunk.id if target_chunk else chunk_objs[0].id,
@@ -1202,12 +1189,29 @@ def _run_simple_pipeline(
             job.processed_chunks = batch_idx + 1
             db.commit()
 
-        # Update chunk card counts
+        # Update chunk card counts and topic paths
         for ch in chunk_objs:
             ch.card_count = db.query(Card).filter(Card.chunk_id == ch.id).count()
+            # Set chunk topic from most common card topic in that chunk
+            chunk_cards = db.query(Card).filter(Card.chunk_id == ch.id).all()
+            if chunk_cards:
+                topic_counts = {}
+                for c in chunk_cards:
+                    tp = c.tags[-1] if c.tags else None
+                    if tp:
+                        topic_counts[tp] = topic_counts.get(tp, 0) + 1
+                if topic_counts:
+                    best_topic = max(topic_counts, key=topic_counts.get)
+                    # Find matching curriculum node
+                    for node in curriculum_nodes:
+                        if node.path and node.path.endswith(best_topic):
+                            ch.topic_id = node.id
+                            ch.topic_path = node.path
+                            ch.topic_confirmed = True
+                            break
         db.commit()
 
-        # Log usage
+        # Log card generation usage
         db.add(AIUsageLog(
             operation="card_generation",
             model=model,
@@ -1217,7 +1221,90 @@ def _run_simple_pipeline(
             document_id=doc_id,
             job_id=job_id,
         ))
+        job.total_cards = total_cards
+        db.commit()
 
+        # ── Step 4: Generate vignettes & teaching cases ──────────────────────
+        if supplemental_rule_set_id:
+            job.pipeline_step = "supplementals"
+            db.commit()
+
+            supp_rs = db.get(RuleSet, supplemental_rule_set_id)
+            if supp_rs:
+                supp_rules_text = supp_rs.content
+                all_cards = db.query(Card).filter(
+                    Card.document_id == doc_id,
+                    Card.status == CardStatus.active
+                ).all()
+
+                # Group cards by leaf topic (condition)
+                condition_groups = {}
+                for c in all_cards:
+                    leaf = (c.tags or [])[-1] if c.tags else "Unassigned"
+                    condition_groups.setdefault(leaf, []).append({
+                        "id": c.id,
+                        "card_number": c.card_number,
+                        "front_text": c.front_text,
+                    })
+
+                supp_input = 0
+                supp_output = 0
+
+                def generate_supplemental_with_retry(condition, group_cards):
+                    for attempt in range(4):
+                        try:
+                            return generate_supplemental_for_group(
+                                client, condition, group_cards, supp_rules_text, model
+                            )
+                        except anthropic.RateLimitError:
+                            if attempt == 3:
+                                raise
+                            wait = 20 * (2 ** attempt)
+                            logger.warning(
+                                "Rate limit on supplemental '%s', retrying in %ds",
+                                condition, wait
+                            )
+                            time.sleep(wait)
+
+                with ThreadPoolExecutor(max_workers=3) as executor:
+                    futures = {
+                        executor.submit(
+                            generate_supplemental_with_retry, cond, cards_list
+                        ): (cond, cards_list)
+                        for cond, cards_list in condition_groups.items()
+                    }
+                    for future in as_completed(futures):
+                        cond, cards_list = futures[future]
+                        try:
+                            vignette, teaching_case, s_usage = future.result()
+                            card_ids_in_group = [c["id"] for c in cards_list]
+                            db.query(Card).filter(Card.id.in_(card_ids_in_group)).update(
+                                {"vignette": vignette, "teaching_case": teaching_case},
+                                synchronize_session="fetch",
+                            )
+                            supp_input += s_usage.get("input_tokens", 0)
+                            supp_output += s_usage.get("output_tokens", 0)
+                        except Exception:
+                            logger.exception(
+                                "simple_pipeline: supplemental failed for '%s'", cond
+                            )
+                        db.commit()
+
+                if supp_input > 0 or supp_output > 0:
+                    db.add(AIUsageLog(
+                        operation="supplemental_generation",
+                        model=model,
+                        input_tokens=supp_input,
+                        output_tokens=supp_output,
+                        cost_usd=compute_cost(model, supp_input, supp_output),
+                        document_id=doc_id,
+                        job_id=job_id,
+                    ))
+                    total_input_tokens += supp_input
+                    total_output_tokens += supp_output
+                    db.commit()
+
+        # ── Done ─────────────────────────────────────────────────────────────
         job.pipeline_step = "done"
         job.status = JobStatus.done
         job.total_cards = total_cards

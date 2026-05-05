@@ -808,7 +808,7 @@ interface WorkspacePageProps {
 }
 
 export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
-  const { selectedModel, selectedRuleSetId } = useSettings();
+  const { selectedModel, selectedRuleSetId, vignetteRuleSetId } = useSettings();
   const location = useLocation();
 
   // Documents
@@ -1103,6 +1103,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
         const result = await uploadDocumentSimple(file, {
           model: selectedModel,
           rule_set_id: selectedRuleSetId,
+          supplemental_rule_set_id: vignetteRuleSetId,
         });
         await fetchDocuments();
         startAutoPolling(result.job_id, result.document_id);
@@ -1240,6 +1241,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
           name: pasteName.trim(),
           model: selectedModel,
           rule_set_id: selectedRuleSetId,
+          supplemental_rule_set_id: vignetteRuleSetId,
         });
         await fetchDocuments();
         setShowPasteModal(false);

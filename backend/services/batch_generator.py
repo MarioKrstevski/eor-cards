@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # Rough estimate: 4 chars ≈ 1 token
 CHARS_PER_TOKEN = 4
 MAX_BATCH_TOKENS = 40_000  # leave room for system prompt + output
+# Only split on headings at level <= this threshold for chunking
+MAJOR_HEADING_LEVEL = 2
+# Minimum tokens for a chunk to stand alone (otherwise merge with next)
+MIN_CHUNK_TOKENS = 200
 
 
 def estimate_tokens(text: str) -> int:
@@ -26,24 +30,32 @@ def estimate_tokens(text: str) -> int:
 
 
 def build_sections_from_elements(elements: list) -> list[dict]:
-    """Split parsed elements into sections by headings (deterministic, no AI).
+    """Split parsed elements into sections by MAJOR headings only (level <= 2).
 
-    Returns list of sections: [{heading, paragraphs: [{index, text}], token_estimate}]
+    Sub-headings (level 3+) stay within their parent section.
+    Returns list of sections: [{heading, paragraphs: [{index, text}], token_estimate, para_start, para_end}]
     """
     sections = []
     current_section = {"heading": "Introduction", "paragraphs": [], "token_estimate": 0}
 
     para_counter = 0
     for elem in elements:
-        if elem["type"] == "heading" and current_section["paragraphs"]:
+        # Only split on major headings (level 1-2)
+        is_major_heading = (
+            elem["type"] == "heading"
+            and elem.get("level", 99) <= MAJOR_HEADING_LEVEL
+        )
+
+        if is_major_heading and current_section["paragraphs"]:
             sections.append(current_section)
             current_section = {"heading": elem["text"], "paragraphs": [], "token_estimate": 0}
             continue
 
-        if elem["type"] == "heading" and not current_section["paragraphs"]:
+        if is_major_heading and not current_section["paragraphs"]:
             current_section["heading"] = elem["text"]
             continue
 
+        # All other content (including sub-headings) becomes paragraph content
         text = elem["text"].strip()
         if text:
             para_counter += 1
@@ -56,7 +68,138 @@ def build_sections_from_elements(elements: list) -> list[dict]:
     if current_section["paragraphs"]:
         sections.append(current_section)
 
+    # Add para_start/para_end for card-to-chunk mapping
+    for section in sections:
+        if section["paragraphs"]:
+            section["para_start"] = section["paragraphs"][0]["index"]
+            section["para_end"] = section["paragraphs"][-1]["index"]
+        else:
+            section["para_start"] = 0
+            section["para_end"] = 0
+
     return sections
+
+
+def build_chunks_from_sections(sections: list[dict], elements: list) -> list[dict]:
+    """Build chunk dicts (for DB storage) from sections.
+
+    Each section becomes one chunk. Uses the same structure as heuristic_chunk()
+    but produces fewer, larger chunks aligned with major headings.
+    """
+    from backend.services.chunker import IMG_DATA_URI_RE
+
+    chunks = []
+    # We need to map sections back to element ranges
+    # Sections are built from elements in order, splitting on major headings
+    elem_idx = 0
+    for section_idx, section in enumerate(sections):
+        # Find the element range for this section
+        # Walk elements to find where this section's content lives
+        start_elem = None
+        end_elem = None
+
+        # Simple approach: scan elements for content matching this section's heading
+        # Since sections are in order, we can track position
+        pass
+
+    # Alternative simpler approach: rebuild from elements directly using same logic
+    chunk_boundaries = []
+    current_start = 0
+
+    for i, elem in enumerate(elements):
+        is_major_heading = (
+            elem["type"] == "heading"
+            and elem.get("level", 99) <= MAJOR_HEADING_LEVEL
+        )
+        if is_major_heading and i > current_start:
+            # Check if previous section has content
+            has_content = any(
+                e["text"].strip() for e in elements[current_start:i]
+                if e["type"] != "heading"
+            )
+            if has_content:
+                chunk_boundaries.append((current_start, i - 1))
+                current_start = i
+
+    # Last chunk
+    if current_start < len(elements):
+        chunk_boundaries.append((current_start, len(elements) - 1))
+
+    # Merge tiny chunks
+    merged_boundaries = []
+    for start, end in chunk_boundaries:
+        chunk_text = " ".join(e["text"] for e in elements[start:end+1] if e["text"].strip())
+        tokens = estimate_tokens(chunk_text)
+        if merged_boundaries and tokens < MIN_CHUNK_TOKENS:
+            # Extend previous
+            merged_boundaries[-1] = (merged_boundaries[-1][0], end)
+        else:
+            merged_boundaries.append((start, end))
+
+    # Build chunk dicts
+    for chunk_idx, (start, end) in enumerate(merged_boundaries):
+        chunk_elements = elements[start:end + 1]
+        source_text_parts = []
+        source_html_parts = []
+        all_bold_terms = []
+
+        heading = "Section"
+        for elem in chunk_elements:
+            if elem["type"] == "heading" and heading == "Section":
+                heading = elem["text"]
+
+            source_text_parts.append(elem["text"])
+            if elem["type"] == "heading":
+                level = min(elem.get("level", 2), 4)
+                source_html_parts.append(f"<h{level + 1}>{elem['html']}</h{level + 1}>")
+            elif elem["type"] == "table":
+                source_html_parts.append(elem["html"])
+            elif elem["type"] == "bullet":
+                source_html_parts.append(
+                    f'<div class="bullet level-{elem.get("level", 3)}">{elem["html"]}</div>'
+                )
+            else:
+                source_html_parts.append(f"<p>{elem['html']}</p>")
+            all_bold_terms.extend(elem.get("bold_terms", []))
+            for img in elem.get("images", []):
+                source_html_parts.append(f'<img src="{img["data_uri"]}" class="doc-image" />')
+
+        seen = set()
+        unique_bold = []
+        for t in all_bold_terms:
+            if t not in seen:
+                seen.add(t)
+                unique_bold.append(t)
+
+        # Determine content type
+        has_bullets = any(e["type"] == "bullet" for e in chunk_elements)
+        has_paragraphs = any(e["type"] == "paragraph" for e in chunk_elements)
+        has_table = any(e["type"] == "table" for e in chunk_elements)
+        if has_table:
+            content_type = "table"
+        elif has_bullets and has_paragraphs:
+            content_type = "mixed-paragraph-bullets"
+        elif has_bullets:
+            content_type = "bullet-list"
+        else:
+            content_type = "paragraph"
+
+        source_html = "\n".join(source_html_parts)
+        img_match = IMG_DATA_URI_RE.search(source_html)
+
+        chunks.append({
+            "chunk_index": chunk_idx,
+            "heading": heading,
+            "content_type": content_type,
+            "rule_subset": ["cloze_boundaries"],
+            "source_text": "\n".join(source_text_parts),
+            "source_html": source_html,
+            "bold_terms": unique_bold,
+            "element_range": [start, end],
+            "ref_img": img_match.group(1) if img_match else None,
+        })
+
+    return chunks
 
 
 def pack_batches(sections: list[dict], max_tokens: int = MAX_BATCH_TOKENS) -> list[list[dict]]:
@@ -175,6 +318,30 @@ def parse_batch_output(raw: str) -> list[dict]:
         })
 
     return cards
+
+
+def assign_card_to_chunk(card_data: dict, sections: list[dict], chunk_objs: list) -> object:
+    """Map a card back to its chunk using the source_ref paragraph numbers.
+
+    Returns the best matching chunk object.
+    """
+    source_ref = card_data.get("source_ref") or ""
+    # Extract first paragraph number from source_ref (e.g., "P3-P5" → 3, "P3,P7" → 3)
+    p_match = re.match(r'P(\d+)', source_ref)
+    if not p_match:
+        return chunk_objs[0] if chunk_objs else None
+
+    card_para = int(p_match.group(1))
+
+    # Find which section contains this paragraph number
+    for i, section in enumerate(sections):
+        if section["para_start"] <= card_para <= section["para_end"]:
+            # Map section index to chunk — sections and chunks are 1:1 aligned
+            if i < len(chunk_objs):
+                return chunk_objs[i]
+            break
+
+    return chunk_objs[0] if chunk_objs else None
 
 
 def generate_batch(

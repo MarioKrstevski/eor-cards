@@ -168,12 +168,15 @@ export async function pasteDocumentAuto(params: {
 
 export async function uploadDocumentSimple(
   file: File,
-  params: { model: string; rule_set_id: number }
+  params: { model: string; rule_set_id: number; supplemental_rule_set_id?: number | null }
 ): Promise<FullAutoStartResponse> {
   const form = new FormData();
   form.append('file', file);
   form.append('model', params.model);
   form.append('rule_set_id', String(params.rule_set_id));
+  if (params.supplemental_rule_set_id != null) {
+    form.append('supplemental_rule_set_id', String(params.supplemental_rule_set_id));
+  }
   const res = await http.post<FullAutoStartResponse>('/documents/upload-simple', form);
   return res.data;
 }
@@ -183,6 +186,7 @@ export async function pasteDocumentSimple(params: {
   name: string;
   model: string;
   rule_set_id: number;
+  supplemental_rule_set_id?: number | null;
 }): Promise<FullAutoStartResponse> {
   const res = await http.post<FullAutoStartResponse>('/documents/paste-simple', params);
   return res.data;
