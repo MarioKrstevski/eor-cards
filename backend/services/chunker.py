@@ -873,7 +873,7 @@ Return ONLY the JSON array, no other text."""
 
     response = client.messages.create(
         model=model,
-        max_tokens=8192,
+        max_tokens=16384,
         temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -882,6 +882,11 @@ Return ONLY the JSON array, no other text."""
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
     }
+
+    if response.stop_reason == "max_tokens":
+        raise ValueError(
+            "Topic slicing response was truncated — document has too many headings for single-pass slicing"
+        )
 
     response_text = response.content[0].text.strip()
     if response_text.startswith("```"):
