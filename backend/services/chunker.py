@@ -318,7 +318,7 @@ Return ONLY the JSON array, no other text."""
     return prompt
 
 
-def call_claude_for_chunking(elements: list, images: list, rules_md_path: Optional[str], client: anthropic.Anthropic, model: str = "claude-haiku-4-5-20251001") -> tuple[list, dict]:
+def call_claude_for_chunking(elements: list, images: list, rules_md_path: Optional[str], client: anthropic.Anthropic, model: str = "claude-sonnet-4-6") -> tuple[list, dict]:
     """Call Claude API to determine chunk boundaries. Client is injected (not created here).
     Returns (chunks_list, usage_dict) where usage_dict = {"input_tokens": ..., "output_tokens": ...}.
     """
@@ -331,14 +331,16 @@ def call_claude_for_chunking(elements: list, images: list, rules_md_path: Option
         content.append({"type": "text", "text": f"[Image from paragraph {img['para_index']}]"})
     response = client.messages.create(
         model=model,
-        max_tokens=4096,
-        temperature=0.2,
+        max_tokens=16384,
+        temperature=0,
         messages=[{"role": "user", "content": content}],
     )
     usage = {
         "input_tokens": response.usage.input_tokens,
         "output_tokens": response.usage.output_tokens,
     }
+    if response.stop_reason == "max_tokens":
+        raise ValueError("Chunking response was truncated — document may be too large for single-pass chunking")
     response_text = response.content[0].text.strip()
     if response_text.startswith("```"):
         response_text = re.sub(r"^```\w*\n?", "", response_text)
@@ -761,15 +763,285 @@ def parse_html_to_elements(html: str) -> tuple[list, list]:
     return elements, all_images
 
 
-def parse_and_chunk_html(html: str, client: anthropic.Anthropic, model: str = "claude-haiku-4-5-20251001") -> tuple[list, dict]:
-    """Parse clipboard HTML and chunk it semantically using Claude. Same pipeline as docx."""
+def parse_and_chunk_html(html: str, client: anthropic.Anthropic, model: str = "claude-sonnet-4-6", curriculum_leaves: list[dict] = None) -> tuple[list, dict]:
+    """Parse clipboard HTML and chunk it semantically.
+
+    When curriculum_leaves is provided, uses topic-first slicing (slice_by_topics)
+    which assigns topics during chunking. Otherwise falls back to AI-driven
+    semantic chunking via call_claude_for_chunking.
+    """
     elements, images = parse_html_to_elements(html)
     if not elements:
         raise ValueError("No content could be extracted from the pasted HTML")
 
+    if curriculum_leaves:
+        chunks, usage = slice_by_topics(elements, curriculum_leaves, client, model=model)
+        return chunks, usage
+
     claude_chunks, usage = call_claude_for_chunking(elements, images, None, client, model=model)
     chunks = assemble_chunks(elements, claude_chunks)
     return chunks, usage
+
+
+def slice_by_topics(
+    elements: list,
+    curriculum_leaves: list[dict],  # [{id, name, path, sort_order}, ...]
+    client: anthropic.Anthropic,
+    model: str = "claude-sonnet-4-6",
+) -> tuple[list[dict], dict]:
+    """Topic-first slicing: match document headings against curriculum leaves to slice
+    the document into topic-aligned chunks. Returns (chunks, usage).
+
+    Algorithm:
+    1. Extract all heading-like elements with their indices
+    2. Send headings + curriculum tree to Claude in one batch call
+    3. Claude returns heading->topic mapping with confidence levels
+    4. Use the mapping to slice elements between headings into topic chunks
+    """
+    # ── 1. Collect headings ──────────────────────────────────────────────
+    headings = []
+    for i, elem in enumerate(elements):
+        if elem["type"] == "heading":
+            headings.append({"index": i, "text": elem["text"], "level": elem.get("level", 0)})
+
+    if not headings:
+        # No headings found — treat entire document as one chunk, no topic
+        chunk = _build_heuristic_chunk(0, 0, len(elements) - 1, "Document", elements)
+        chunk["topic_id"] = None
+        chunk["topic_path"] = None
+        chunk["needs_review"] = True
+        return [chunk], {"input_tokens": 0, "output_tokens": 0}
+
+    # ── 2. Build the Claude prompt ───────────────────────────────────────
+    curriculum_lines = []
+    for leaf in curriculum_leaves:
+        curriculum_lines.append(f"  ID={leaf['id']}  path=\"{leaf['path']}\"  name=\"{leaf['name']}\"")
+    curriculum_block = "\n".join(curriculum_lines)
+
+    heading_lines = []
+    for h in headings:
+        # Include a snippet of content after the heading for disambiguation
+        after_text = ""
+        for j in range(h["index"] + 1, min(h["index"] + 4, len(elements))):
+            if elements[j]["type"] != "heading":
+                after_text += " " + elements[j]["text"][:100]
+        heading_lines.append(
+            f"  heading_index={h['index']}  level={h['level']}  "
+            f"text=\"{h['text']}\""
+            f"  context_after=\"{after_text.strip()[:200]}\""
+        )
+    heading_block = "\n".join(heading_lines)
+
+    prompt = f"""You are matching document headings from medical study notes to curriculum topics.
+
+IMPORTANT ASSUMPTIONS:
+- Topics appear in curriculum order approximately 90% of the time. Use sequential order as a STRONG prior.
+- The curriculum leaves below are listed in their natural curriculum order (by sort_order/tree position).
+- Each heading should map to exactly one curriculum leaf topic.
+
+DISAMBIGUATION RULES:
+- Some topic names appear under different parents (e.g., "Treatment" under both "Pneumonia" and "Asthma").
+- When a heading is ambiguous, look at what comes AFTER it (the context_after field) to determine which branch we're in.
+- Also use the sequential position: if the previous heading matched topic X, the next heading likely matches a topic near X in curriculum order.
+
+CURRICULUM LEAVES (in curriculum order):
+{curriculum_block}
+
+DOCUMENT HEADINGS (in document order):
+{heading_block}
+
+For each heading, assign the best matching curriculum leaf.
+Return a JSON array:
+[
+  {{
+    "heading_index": <int>,
+    "topic_id": <int>,
+    "topic_name": "<leaf name>",
+    "topic_path": "<full path>",
+    "confidence": "high" | "medium" | "low"
+  }},
+  ...
+]
+
+Rules:
+- Every heading must appear in the output
+- If a heading is a top-level category/title (e.g., "CARDIOVASCULAR") that doesn't map to a specific leaf, set topic_id to the FIRST leaf that falls under that category, with confidence "medium"
+- If a heading truly has no matching topic, set topic_id to null with confidence "low"
+- Prefer "high" confidence for clear matches, "medium" for reasonable but not certain, "low" for guesses
+
+Return ONLY the JSON array, no other text."""
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=8192,
+        temperature=0,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens,
+    }
+
+    response_text = response.content[0].text.strip()
+    if response_text.startswith("```"):
+        response_text = re.sub(r"^```\w*\n?", "", response_text)
+        response_text = re.sub(r"\n?```$", "", response_text)
+
+    try:
+        heading_mappings = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        logger.error("slice_by_topics: Claude returned non-JSON: %s", response_text[:300])
+        raise ValueError(f"Topic slicing returned non-JSON: {e}") from e
+
+    # ── 3. Build index lookup for fast access ────────────────────────────
+    mapping_by_index = {}
+    for m in heading_mappings:
+        mapping_by_index[m["heading_index"]] = m
+
+    # ── 4. Slice elements into topic chunks ──────────────────────────────
+    # Each heading starts a new chunk; everything between two headings belongs
+    # to the first heading's topic.
+    heading_indices = sorted(mapping_by_index.keys())
+    chunks = []
+
+    for pos, h_idx in enumerate(heading_indices):
+        # Determine the element range for this chunk
+        start = h_idx
+        if pos + 1 < len(heading_indices):
+            end = heading_indices[pos + 1] - 1
+        else:
+            end = len(elements) - 1
+
+        if end < start:
+            continue
+
+        mapping = mapping_by_index[h_idx]
+        chunk_elements = elements[start: end + 1]
+
+        # Infer content_type from elements (same logic as heuristic_chunk)
+        has_bullets = any(e["type"] == "bullet" for e in chunk_elements)
+        has_paragraphs = any(e["type"] == "paragraph" for e in chunk_elements)
+        has_table = any(e["type"] == "table" for e in chunk_elements)
+        has_images = any(e.get("images") for e in chunk_elements)
+
+        if has_table:
+            content_type = "table"
+        elif has_images:
+            content_type = "reference-image"
+        elif has_bullets and has_paragraphs:
+            content_type = "mixed-paragraph-bullets"
+        elif has_bullets:
+            content_type = "bullet-list"
+        else:
+            content_type = "paragraph"
+
+        topic_id = mapping.get("topic_id")
+        topic_path = mapping.get("topic_path")
+        confidence = mapping.get("confidence", "low")
+
+        # Use the document heading text as the chunk heading
+        heading_text = elements[h_idx]["text"]
+
+        chunk = {
+            "chunk_index": len(chunks),
+            "heading": heading_text,
+            "content_type": content_type,
+            "rule_subset": ["cloze_boundaries"],
+            "element_range": [start, end],
+            "topic_id": topic_id,
+            "topic_path": topic_path,
+            "needs_review": confidence == "low",
+            "topic_confidence": confidence,
+        }
+        chunks.append(chunk)
+
+    # Handle elements before the first heading (preamble)
+    if heading_indices and heading_indices[0] > 0:
+        preamble_end = heading_indices[0] - 1
+        preamble_elems = elements[0: preamble_end + 1]
+        # Skip if it's all empty/whitespace
+        if any(e["text"].strip() for e in preamble_elems):
+            # Assign preamble to the same topic as the first heading
+            first_mapping = mapping_by_index[heading_indices[0]]
+            preamble_chunk = {
+                "chunk_index": -1,  # will be renumbered below
+                "heading": "Introduction",
+                "content_type": "paragraph",
+                "rule_subset": ["cloze_boundaries"],
+                "element_range": [0, preamble_end],
+                "topic_id": first_mapping.get("topic_id"),
+                "topic_path": first_mapping.get("topic_path"),
+                "needs_review": True,
+                "topic_confidence": "low",
+            }
+            chunks.insert(0, preamble_chunk)
+
+    # Renumber chunk indices
+    for i, chunk in enumerate(chunks):
+        chunk["chunk_index"] = i
+
+    # ── 5. Assemble final chunks with content ────────────────────────────
+    result = []
+    for cc in chunks:
+        start, end = cc["element_range"]
+        chunk_elements = elements[start: end + 1]
+        source_text_parts = []
+        source_html_parts = []
+        all_bold_terms = []
+        all_images = []
+
+        for elem in chunk_elements:
+            source_text_parts.append(elem["text"])
+            if elem["type"] == "heading":
+                level = min(elem.get("level", 2), 4)
+                source_html_parts.append(f"<h{level + 1}>{elem['html']}</h{level + 1}>")
+            elif elem["type"] == "table":
+                source_html_parts.append(elem["html"])
+            elif elem["type"] == "bullet":
+                source_html_parts.append(
+                    f'<div class="bullet level-{elem.get("level", 3)}">{elem["html"]}</div>'
+                )
+            else:
+                source_html_parts.append(f"<p>{elem['html']}</p>")
+            all_bold_terms.extend(elem.get("bold_terms", []))
+            for img in elem.get("images", []):
+                all_images.append({
+                    "data_uri": img["data_uri"],
+                    "type": "reference-image",
+                    "ocr_text": None,
+                    "position": f"in_element_{elem['para_index']}",
+                })
+                source_html_parts.append(f'<img src="{img["data_uri"]}" class="doc-image" />')
+
+        seen = set()
+        unique_bold = []
+        for t in all_bold_terms:
+            if t not in seen:
+                seen.add(t)
+                unique_bold.append(t)
+
+        source_html = "\n".join(source_html_parts)
+        img_match = IMG_DATA_URI_RE.search(source_html)
+
+        result.append({
+            "chunk_index": cc["chunk_index"],
+            "heading": cc["heading"],
+            "content_type": cc["content_type"],
+            "rule_subset": cc["rule_subset"],
+            "source_text": "\n".join(source_text_parts),
+            "source_html": source_html,
+            "bold_terms": unique_bold,
+            "element_range": cc["element_range"],
+            "images": all_images,
+            "ref_img": img_match.group(1) if img_match else None,
+            "topic_id": cc.get("topic_id"),
+            "topic_path": cc.get("topic_path"),
+            "needs_review": cc.get("needs_review", False),
+            "topic_confidence": cc.get("topic_confidence", "high"),
+        })
+
+    return result, usage
 
 
 def strip_images_for_storage(chunks: list[dict]) -> list[dict]:
@@ -881,11 +1153,19 @@ def _build_heuristic_chunk(chunk_idx, start, end, heading, elems):
     }
 
 
-def parse_and_chunk_docx(docx_path: str, img_dir: str, client: anthropic.Anthropic, rules_md_path: Optional[str] = None, model: str = "claude-haiku-4-5-20251001") -> tuple[list[dict], dict]:
-    """Full pipeline: parse docx -> call Claude for chunks -> return (assembled chunks, usage).
-    Returns (chunks, usage) where usage = {"input_tokens": int, "output_tokens": int}.
+def parse_and_chunk_docx(docx_path: str, img_dir: str, client: anthropic.Anthropic, rules_md_path: Optional[str] = None, model: str = "claude-sonnet-4-6", curriculum_leaves: list[dict] = None) -> tuple[list[dict], dict]:
+    """Full pipeline: parse docx -> chunk -> return (assembled chunks, usage).
+
+    When curriculum_leaves is provided, uses topic-first slicing (slice_by_topics)
+    which assigns topics during chunking. Otherwise falls back to AI-driven
+    semantic chunking via call_claude_for_chunking.
     """
     elements, images = parse_docx(docx_path, img_dir)
+
+    if curriculum_leaves:
+        chunks, usage = slice_by_topics(elements, curriculum_leaves, client, model=model)
+        return chunks, usage
+
     claude_chunks, usage = call_claude_for_chunking(elements, images, rules_md_path, client, model=model)
     chunks = assemble_chunks(elements, claude_chunks)
     return chunks, usage

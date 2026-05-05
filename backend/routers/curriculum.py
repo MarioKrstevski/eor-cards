@@ -26,6 +26,7 @@ def node_to_dict(node: Curriculum, children: list = None) -> dict:
         "level": node.level,
         "path": node.path,
         "parent_id": node.parent_id,
+        "sort_order": node.sort_order,
         "children": children or [],
     }
 
@@ -37,9 +38,9 @@ def build_tree(nodes: list[Curriculum]) -> list[dict]:
             roots.append(by_id[n.id])
         elif n.parent_id in by_id:
             by_id[n.parent_id]["children"].append(by_id[n.id])
-    # Sort each level alphabetically by name
+    # Sort each level by sort_order (curriculum/insertion order)
     def sort_tree(nodes_list):
-        nodes_list.sort(key=lambda x: x["name"].lower())
+        nodes_list.sort(key=lambda x: x["sort_order"])
         for node in nodes_list:
             sort_tree(node["children"])
     sort_tree(roots)
@@ -59,7 +60,9 @@ def create_node(body: CurriculumCreate, db: Session = Depends(get_db)):
             raise HTTPException(404, "Parent not found")
     level = (parent.level + 1) if parent else 0
     path = f"{parent.path} > {body.name}" if parent else body.name
-    node = Curriculum(name=body.name, parent_id=body.parent_id, level=level, path=path)
+    # Place new node at the end of its sibling group
+    max_order = db.query(func.max(Curriculum.sort_order)).filter_by(parent_id=body.parent_id).scalar() or -1
+    node = Curriculum(name=body.name, parent_id=body.parent_id, level=level, path=path, sort_order=max_order + 1)
     db.add(node)
     db.commit()
     db.refresh(node)

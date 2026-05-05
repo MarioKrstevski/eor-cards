@@ -42,6 +42,15 @@ def _run_migrations():
         _add_col_if_missing(conn, insp, "feature_requests", "app_version", "INTEGER DEFAULT 0")
         _add_col_if_missing(conn, insp, "feature_requests", "completed_at", "DATETIME")
 
+        # v6 columns
+        _add_col_if_missing(conn, insp, "curriculum", "sort_order", "INTEGER DEFAULT 0")
+
+        # v7 columns — source paragraph traceability
+        _add_col_if_missing(conn, insp, "cards", "source_ref", "VARCHAR(20)")
+
+        # v8 columns — full-auto pipeline step tracking
+        _add_col_if_missing(conn, insp, "generation_jobs", "pipeline_step", "VARCHAR(30)")
+
         # Backfill note_id for existing cards
         cursor = conn.execute(text("SELECT id FROM cards WHERE note_id IS NULL ORDER BY created_at, id"))
         rows = cursor.fetchall()
@@ -104,9 +113,9 @@ STYLE: Second person present tense. Bold key clinical terms using <b> tags. Use 
 
 def _seed_curriculum(db, nodes, parent_id, level, parent_path):
     from backend.models import Curriculum
-    for node in nodes:
+    for idx, node in enumerate(nodes):
         path = f"{parent_path} > {node['name']}" if parent_path else node["name"]
-        c = Curriculum(parent_id=parent_id, name=node["name"], level=level, path=path)
+        c = Curriculum(parent_id=parent_id, name=node["name"], level=level, path=path, sort_order=idx)
         db.add(c)
         db.flush()
         if node.get("children"):

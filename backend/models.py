@@ -25,6 +25,7 @@ class Curriculum(Base):
     name: Mapped[str] = mapped_column(String(200))
     level: Mapped[int] = mapped_column(Integer, default=0)
     path: Mapped[str] = mapped_column(String(500))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
     children: Mapped[list["Curriculum"]] = relationship("Curriculum", back_populates="parent")
     parent: Mapped[Optional["Curriculum"]] = relationship("Curriculum", back_populates="children", remote_side="Curriculum.id")
 
@@ -74,6 +75,7 @@ class Card(Base):
     vignette: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     teaching_case: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ref_img: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_ref: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # e.g., "P3-P5" — paragraph range within chunk
     ref_img_position: Mapped[str] = mapped_column(String(10), default="front")
     note_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=True)
     status: Mapped[CardStatus] = mapped_column(Enum(CardStatus), default=CardStatus.active)
@@ -106,6 +108,7 @@ class GenerationJob(Base):
     estimated_cost_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     actual_input_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     actual_output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pipeline_step: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # full_auto pipeline: chunking/topics/cards/vignettes/done
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     started_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)

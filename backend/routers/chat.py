@@ -234,7 +234,7 @@ Tell them: paste the core content requirements from their Claude Chat prompt int
 
 ## TECHNICAL NOTES (for questions about how things work under the hood)
 
-- All AI calls use temperature=0.2 for consistent output across runs
+- All AI calls use temperature=0 for consistent output across runs
 - Prompt caching reduces cost ~90% for the rules block across chunks/conditions (two cached system blocks: documentation + rules)
 - 3 parallel workers process chunks and conditions simultaneously (with exponential backoff retry on rate limits)
 - Card output format: `number|card text|additional context (optional)` — parser splits on `|` delimiters
@@ -390,6 +390,7 @@ def _send_message_inner(body: ChatMessageRequest, db: Session):
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=1024,
+                temperature=0,
                 system=system_blocks,
                 messages=history,
                 extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
@@ -399,6 +400,7 @@ def _send_message_inner(body: ChatMessageRequest, db: Session):
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=1024,
+                temperature=0,
                 system=SYSTEM_PROMPT + "\n\n" + rules_block,
                 messages=history,
             )

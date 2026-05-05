@@ -21,17 +21,17 @@ function renderHidden(html: string): string {
   return result;
 }
 
-// Reveal cloze — show answered terms with blue underline
+// Reveal cloze — show answered terms with bold blue text
 function renderRevealed(html: string): string {
   // Handle wrapped: <b><span ...>{{cN::term}}</span></b>
   let result = html.replace(
     /(?:<b>)?<span[^>]*>\{\{c\d+::([^}]+)\}\}<\/span>(?:<\/b>)?/g,
-    '<span style="text-decoration:underline;text-decoration-color:#2563eb;text-underline-offset:2px;font-weight:600">$1</span>'
+    '<span style="color:#1d4ed8;font-weight:700">$1</span>'
   );
   // Handle bare {{cN::term}}
   result = result.replace(
     /\{\{c\d+::([^}]+)\}\}/g,
-    '<span style="text-decoration:underline;text-decoration-color:#2563eb;text-underline-offset:2px;font-weight:600">$1</span>'
+    '<span style="color:#1d4ed8;font-weight:700">$1</span>'
   );
   return result;
 }

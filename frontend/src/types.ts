@@ -6,6 +6,7 @@ export interface CurriculumNode {
   parent_id: number | null;
   path: string;
   level: number;
+  sort_order: number;
   children: CurriculumNode[];
 }
 
@@ -108,6 +109,7 @@ export interface Card {
   chunk_source_html: string | null;
   ref_img: string | null;
   ref_img_position: 'front' | 'back';
+  source_ref?: string | null;
   note_id: number;
 }
 
@@ -136,6 +138,8 @@ export interface StartGenerationResponse {
 
 export type JobStatus = 'pending' | 'running' | 'done' | 'failed';
 
+export type PipelineStep = 'chunking' | 'topics' | 'cards' | 'vignettes' | 'done' | null;
+
 export interface GenerationJob {
   id: number;
   document_id: number;
@@ -146,10 +150,16 @@ export interface GenerationJob {
   estimated_cost_usd: number | null;
   actual_input_tokens: number | null;
   actual_output_tokens: number | null;
-  job_type: 'cards' | 'vignettes' | 'teaching_cases';
+  job_type: 'cards' | 'vignettes' | 'teaching_cases' | 'supplemental' | 'full_auto';
+  pipeline_step: PipelineStep;
   error_message: string | null;
   started_at: string | null;
   finished_at: string | null;
+}
+
+export interface FullAutoStartResponse {
+  document_id: number;
+  job_id: number;
 }
 
 export interface SupplementalEstimate {

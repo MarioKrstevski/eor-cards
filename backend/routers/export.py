@@ -36,7 +36,7 @@ def export_cards(
     writer = csv.DictWriter(output, fieldnames=[
         "note_id", "id", "front_text", "front_html", "tags", "extra",
         "vignette", "teaching_case", "ref_img", "ref_img_position",
-        "status", "needs_review", "chunk_heading", "document_name", "topic_path",
+        "source_ref", "status", "needs_review", "chunk_heading", "document_name", "topic_path",
     ])
     writer.writeheader()
     for card in cards:
@@ -51,6 +51,7 @@ def export_cards(
             "teaching_case": card.teaching_case or "",
             "ref_img": card.ref_img or "",
             "ref_img_position": card.ref_img_position or "",
+            "source_ref": card.source_ref or "",
             "status": card.status,
             "needs_review": card.needs_review,
             "chunk_heading": card.chunk.heading if card.chunk else "",

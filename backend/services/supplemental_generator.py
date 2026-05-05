@@ -45,6 +45,7 @@ Output format — use these exact markers:
     response = client.messages.create(
         model=model,
         max_tokens=4096,
+        temperature=0,
         messages=[
             {
                 "role": "user",

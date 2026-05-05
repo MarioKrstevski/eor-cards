@@ -23,13 +23,30 @@ NEVER use markdown formatting. \
 * characters are FORBIDDEN for emphasis. \
 No #, no backticks, no markdown of any kind. \
 For any emphasis, use only HTML tags: <b>term</b>. \
-The output format is: number|card text|additional context \
+The output format is: number|card text|additional context (optional)|source:P1-P3 \
 The additional context after the second | is optional. When the rules specify \
 additional context, sibling footers, or supplementary information for a card, \
 place it after a second | delimiter on the same line. \
 Do NOT concatenate additional context directly into the card text. \
 The card text (between first and second |) must contain ONLY the primary testable content. \
-Example: 1|Primary card text with {{c1::clozes}}.|Other items: item A, item B, item C."""
+The fourth field (after the third |) is a source reference indicating which [P1], [P2], etc. \
+paragraph markers from the source text the card was derived from. Use format source:P3 (single), \
+source:P3-P5 (contiguous range), or source:P3,P7 (non-contiguous). This field is required. \
+Example: 1|Primary card text with {{c1::clozes}}.|Other items: item A, item B, item C|source:P1-P2"""
+
+
+def number_paragraphs(text: str) -> str:
+    """Prefix each non-empty line with [P1], [P2], etc. for source traceability."""
+    lines = text.split("\n")
+    numbered = []
+    counter = 0
+    for line in lines:
+        if line.strip():
+            counter += 1
+            numbered.append(f"[P{counter}] {line}")
+        else:
+            numbered.append(line)
+    return "\n".join(numbered)
 
 
 def strip_card_html(card_text: str) -> str:
@@ -95,14 +112,27 @@ def parse_card_output(raw: str) -> tuple[list[dict], bool]:
             continue
         match = re.match(r'^(\d+)\|(.+)$', line)
         if match:
-            parts = match.group(2).split('|', 1)
+            parts = match.group(2).split('|')
             card_text = fix_markdown_bold(parts[0].strip())
-            extra = format_extra_as_list(fix_markdown_bold(parts[1].strip())) if len(parts) > 1 else None
+            extra = None
+            source_ref = None
+            # Find and extract the source:P… field from trailing parts
+            non_source_parts = []
+            for p in parts[1:]:
+                if p.strip().startswith("source:"):
+                    source_ref = p.strip()[len("source:"):].strip() or None
+                else:
+                    non_source_parts.append(p)
+            if non_source_parts:
+                raw_extra = "|".join(non_source_parts).strip()
+                if raw_extra:
+                    extra = format_extra_as_list(fix_markdown_bold(raw_extra))
             cards.append({
                 "card_number": int(match.group(1)),
                 "front_html": card_text,
                 "front_text": strip_card_html(card_text),
                 "extra": extra,
+                "source_ref": source_ref,
             })
     return cards, needs_review
 
@@ -119,26 +149,28 @@ def regenerate_single_card(
     topic = chunk.get('topic_path') or ''
     topic_line = f"Curriculum context (for reference only): {topic}\n" if topic else ''
 
+    numbered_source = number_paragraphs(chunk.get('source_text', ''))
+
     chunk_prompt = (
         f"You are regenerating a single flashcard from the source content below.\n\n"
         f"{topic_line}Section: {chunk.get('heading', '')}\n\n"
-        f"Source text:\n{chunk.get('source_text', '')}\n\n"
+        f"Source text:\n{numbered_source}\n\n"
         f"The existing card (improve or replace it):\n{existing_card_html}\n"
     )
     if extra_prompt:
         chunk_prompt += f"\nAdditional guidance: {extra_prompt}\n"
-    chunk_prompt += "\nGenerate ONE improved replacement card. Output exactly:\n1|cloze card text"
+    chunk_prompt += "\nGenerate ONE improved replacement card. Output exactly:\n1|cloze card text|additional context (optional)|source:P1-P3"
 
     response = client.messages.create(
         model=model,
         max_tokens=512,
-        temperature=0.2,
+        temperature=0,
         messages=[{
             "role": "user",
             "content": [
                 {
                     "type": "text",
-                    "text": rules_text + "\n\n---\n\n",
+                    "text": ANCHOR_INSTRUCTION + "\n\n" + rules_text + "\n\n---\n\n",
                     "cache_control": {"type": "ephemeral"},
                 },
                 {
@@ -189,13 +221,15 @@ def generate_cards_for_chunk(
         if parts:
             sibling_section = "\n\n--- RELATED CONTENT (context only — do NOT generate cards from this) ---\n" + "\n\n".join(parts)
 
+    numbered_source = number_paragraphs(chunk.get('source_text', ''))
+
     chunk_prompt = (
         f"Now generate cards from the following study note content.\n\n"
         f"{topic_line}Section: {chunk.get('heading', '')}\n\n"
-        f"Source text:\n{chunk.get('source_text', '')}"
+        f"Source text:\n{numbered_source}"
         f"{sibling_section}\n\n"
         f"Generate the cards following ALL the rules above. Output in the exact format:\n"
-        f"number|cloze card text|additional context (optional)\n\n"
+        f"number|cloze card text|additional context (optional)|source:P1-P3\n\n"
         f"If you cannot confidently generate quality cards for this content, output NEEDS_REVIEW on its own line at the end.\n"
         f"Remember: card N uses only cN for all clozes."
     )
@@ -203,7 +237,7 @@ def generate_cards_for_chunk(
     response = client.messages.create(
         model=model,
         max_tokens=4096,
-        temperature=0.2,
+        temperature=0,
         messages=[{
             "role": "user",
             "content": [

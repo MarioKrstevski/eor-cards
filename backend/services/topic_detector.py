@@ -49,7 +49,7 @@ Return ONLY a JSON array, no explanation:
     response = client.messages.create(
         model=model,
         max_tokens=1024,
-        temperature=0.2,
+        temperature=0,
         messages=[{"role": "user", "content": prompt}],
     )
 

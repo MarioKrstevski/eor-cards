@@ -44,6 +44,7 @@ def card_to_dict(card: Card) -> dict:
         "teaching_case": card.teaching_case,
         "ref_img": card.ref_img,
         "ref_img_position": card.ref_img_position,
+        "source_ref": card.source_ref,
         "note_id": card.note_id,
         "status": card.status,
         "is_reviewed": card.is_reviewed,
@@ -142,6 +143,7 @@ def regenerate_card(card_id: int, body: RegenerateCardRequest, db: Session = Dep
         card.front_text = cards_data[0]["front_text"]
         if cards_data[0].get("extra") is not None:
             card.extra = cards_data[0]["extra"]
+        card.source_ref = cards_data[0].get("source_ref")
         card.is_reviewed = False
     db.commit()
     if usage:

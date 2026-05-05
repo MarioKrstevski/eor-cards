@@ -1,5 +1,20 @@
 import type { CurriculumNode, TopicCoverageStats } from './types';
 
+export type TopicSortMode = 'curriculum' | 'alpha';
+
+/** Deep-sort a curriculum tree. Returns a new array (does not mutate). */
+export function sortTree(nodes: CurriculumNode[], mode: TopicSortMode): CurriculumNode[] {
+  const sorted = [...nodes].sort((a, b) =>
+    mode === 'alpha'
+      ? a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      : a.sort_order - b.sort_order
+  );
+  return sorted.map((n) => ({
+    ...n,
+    children: sortTree(n.children, mode),
+  }));
+}
+
 export function flattenTree(nodes: CurriculumNode[]): CurriculumNode[] {
   const result: CurriculumNode[] = [];
   function walk(list: CurriculumNode[]) {

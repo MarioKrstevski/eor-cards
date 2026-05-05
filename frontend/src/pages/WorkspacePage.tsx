@@ -8,6 +8,8 @@ import {
   getCurriculumCoverage,
   uploadDocument,
   pasteDocument,
+  uploadDocumentAuto,
+  pasteDocumentAuto,
   getDocument,
   getRuleSets,
   startGeneration,
@@ -31,11 +33,12 @@ import type {
   CostEstimate,
   UploadResult,
   ReassignPreviewResult,
+  PipelineStep,
 } from '../types';
 import CardsPanel from './CardsPanel';
 import ConfirmModal from '../components/ConfirmModal';
 import CurriculumPicker from '../components/CurriculumPicker';
-import { flattenTree, buildAggregatedCounts } from '../utils';
+import { flattenTree, buildAggregatedCounts, sortTree } from '../utils';
 import { useSettings } from '../context/SettingsContext';
 
 // ── TopicNode: read-only collapsible curriculum node for sidebar tree ─────────
@@ -378,6 +381,9 @@ function TopicConfirmScreen({
                       }
                       placeholder="-- unassigned --"
                     />
+                    {chunk.topic_path && (
+                      <p className="text-xs text-gray-400 mt-1 truncate" title={chunk.topic_path}>{chunk.topic_path}</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -596,6 +602,9 @@ function ReassignReviewScreen({
                         onChange={(id) => setTopicMap((prev) => ({ ...prev, [chunk.id]: id }))}
                         placeholder="-- unassigned --"
                       />
+                      {chunk.topic_path && (
+                        <p className="text-xs text-gray-400 mt-1 truncate" title={chunk.topic_path}>{chunk.topic_path}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -799,7 +808,7 @@ interface WorkspacePageProps {
 }
 
 export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
-  const { selectedModel, selectedRuleSetId } = useSettings();
+  const { selectedModel, selectedRuleSetId, vignetteRuleSetId } = useSettings();
   const location = useLocation();
 
   // Documents
@@ -821,6 +830,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   const [directCounts, setDirectCounts] = useState<Record<string, TopicCoverageStats>>({});
   const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
   const [topicSearch, setTopicSearch] = useState('');
+  const [topicSort, setTopicSort] = useState<'curriculum' | 'alpha'>('curriculum');
   const [topicEditMode, setTopicEditMode] = useState(false);
   const [confirmDeleteTopicId, setConfirmDeleteTopicId] = useState<number | null>(null);
   const [reassignLoading, setReassignLoading] = useState(false);
@@ -866,6 +876,14 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   const [pasting, setPasting] = useState(false);
   const [pasteError, setPasteError] = useState<string | null>(null);
   const pasteAreaRef = useRef<HTMLDivElement>(null);
+
+  // Full-auto pipeline
+  const [fullAuto, setFullAuto] = useState(false);
+  const [autoJobId, setAutoJobId] = useState<number | null>(null);
+  const [autoDocId, setAutoDocId] = useState<number | null>(null);
+  const [autoPipelineStep, setAutoPipelineStep] = useState<PipelineStep>(null);
+  const [autoError, setAutoError] = useState<string | null>(null);
+  const autoPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1012,6 +1030,63 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     }
   }
 
+  // ── Full-auto pipeline polling ──────────────────────────────────────────────
+  function startAutoPolling(jobId: number, docId: number) {
+    setAutoJobId(jobId);
+    setAutoDocId(docId);
+    setAutoError(null);
+    setAutoPipelineStep('chunking');
+
+    // Clear any previous polling
+    if (autoPollingRef.current) clearInterval(autoPollingRef.current);
+
+    autoPollingRef.current = setInterval(async () => {
+      try {
+        const job = await getGenerationJob(jobId);
+        setAutoPipelineStep(job.pipeline_step as PipelineStep);
+
+        if (job.status === 'done') {
+          if (autoPollingRef.current) clearInterval(autoPollingRef.current);
+          autoPollingRef.current = null;
+          setAutoJobId(null);
+          setAutoPipelineStep(null);
+          await fetchDocuments();
+          refreshCoverage();
+          setCardsRefreshKey((k) => k + 1);
+          refreshUsage();
+          // Select the document
+          setSidebarTab('documents');
+          setSelectedDocumentId(docId);
+          setSelectedTopicId(null);
+        } else if (job.status === 'failed') {
+          if (autoPollingRef.current) clearInterval(autoPollingRef.current);
+          autoPollingRef.current = null;
+          setAutoJobId(null);
+          setAutoPipelineStep(null);
+          setAutoError(job.error_message || 'Pipeline failed');
+          await fetchDocuments();
+        }
+      } catch {
+        // polling error — keep trying
+      }
+    }, 2000);
+  }
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (autoPollingRef.current) clearInterval(autoPollingRef.current);
+    };
+  }, []);
+
+  const pipelineStepLabel: Record<string, string> = {
+    chunking: 'Chunking document...',
+    topics: 'Assigning topics...',
+    cards: 'Generating cards...',
+    vignettes: 'Generating vignettes...',
+    done: 'Complete',
+  };
+
   function handleUploadClick() {
     setUploadError(null);
     fileInputRef.current?.click();
@@ -1024,9 +1099,19 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     setUploadError(null);
     setUploading(true);
     try {
-      const result = await uploadDocument(file);
-      await fetchDocuments();
-      setPendingUpload(result);
+      if (fullAuto && selectedRuleSetId) {
+        const result = await uploadDocumentAuto(file, {
+          model: selectedModel,
+          rule_set_id: selectedRuleSetId,
+          supplemental_rule_set_id: vignetteRuleSetId,
+        });
+        await fetchDocuments();
+        startAutoPolling(result.job_id, result.document_id);
+      } else {
+        const result = await uploadDocument(file);
+        await fetchDocuments();
+        setPendingUpload(result);
+      }
       refreshUsage();
     } catch (err: unknown) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
@@ -1150,10 +1235,23 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     setPasteError(null);
     setPasting(true);
     try {
-      const result = await pasteDocument(pastedHtml, pasteName.trim());
-      await fetchDocuments();
-      setShowPasteModal(false);
-      setPendingUpload(result);
+      if (fullAuto && selectedRuleSetId) {
+        const result = await pasteDocumentAuto({
+          html: pastedHtml,
+          name: pasteName.trim(),
+          model: selectedModel,
+          rule_set_id: selectedRuleSetId,
+          supplemental_rule_set_id: vignetteRuleSetId,
+        });
+        await fetchDocuments();
+        setShowPasteModal(false);
+        startAutoPolling(result.job_id, result.document_id);
+      } else {
+        const result = await pasteDocument(pastedHtml, pasteName.trim());
+        await fetchDocuments();
+        setShowPasteModal(false);
+        setPendingUpload(result);
+      }
       refreshUsage();
     } catch (err: unknown) {
       setPasteError(err instanceof Error ? err.message : 'Failed to process pasted content.');
@@ -1263,6 +1361,9 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
       setTimeout(() => setChunkRegenProgress(null), 2000);
     }
   }
+
+  // Sorted curriculum for sidebar tree rendering
+  const sortedCurriculum = useMemo(() => sortTree(curriculum, topicSort), [curriculum, topicSort]);
 
   // Flat curriculum for pickers and topic lookup
   const flatCurriculum = useMemo(() => flattenTree(curriculum), [curriculum]);
@@ -1603,6 +1704,13 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                           Reassign
                         </button>
                       )}
+                      <button
+                        onClick={() => setTopicSort(v => v === 'curriculum' ? 'alpha' : 'curriculum')}
+                        title={topicSort === 'curriculum' ? 'Sorted by curriculum order — click for alphabetical' : 'Sorted alphabetically — click for curriculum order'}
+                        className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-lg border bg-white text-gray-600 border-gray-200 hover:bg-gray-50 transition-colors duration-150 ml-auto"
+                      >
+                        {topicSort === 'alpha' ? 'A\u2013Z' : '#'}
+                      </button>
                     </div>
                   </div>
                   <div className="flex-1 overflow-y-auto py-1">
@@ -1650,7 +1758,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                       })()
                     ) : (
                       /* Normal tree */
-                      curriculum.map((node) => (
+                      sortedCurriculum.map((node) => (
                         <TopicNode
                           key={node.id}
                           node={node}
@@ -1724,7 +1832,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                       </button>
                       <button
                         onClick={handleUploadClick}
-                        disabled={uploading}
+                        disabled={uploading || (fullAuto && !selectedRuleSetId)}
                         className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium text-white rounded-lg bg-blue-700 hover:bg-blue-800 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-150"
                       >
                         {uploading ? (
@@ -1756,6 +1864,15 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                         )}
                       </button>
                     </div>
+                    <label className="flex items-center gap-2 mt-2 px-1 text-[11px] text-gray-500 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={fullAuto}
+                        onChange={e => setFullAuto(e.target.checked)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                      />
+                      Full auto{fullAuto && !selectedRuleSetId && <span className="text-amber-600 ml-1">(select a rule set in Settings)</span>}
+                    </label>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -1764,6 +1881,29 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                       onChange={handleFileChange}
                     />
                   </div>
+
+                  {/* Full-auto pipeline status */}
+                  {autoJobId != null && autoPipelineStep && (
+                    <div className="mx-3 mt-2 px-3 py-2 text-xs text-blue-700 bg-blue-50 rounded-lg flex items-center gap-2">
+                      <svg className="animate-spin h-3 w-3 text-blue-600 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      {pipelineStepLabel[autoPipelineStep] || autoPipelineStep}
+                    </div>
+                  )}
+
+                  {/* Auto-pipeline error */}
+                  {autoError && (
+                    <div className="mx-3 mt-2 px-3 py-2 text-xs text-red-700 bg-red-50 rounded-lg flex items-start gap-2">
+                      <span className="shrink-0 mt-0.5">!</span>
+                      <span>{autoError}</span>
+                      <button
+                        onClick={() => setAutoError(null)}
+                        className="ml-auto shrink-0 text-red-400 hover:text-red-600"
+                      >x</button>
+                    </div>
+                  )}
 
                   {/* Errors */}
                   {uploadError && (
@@ -1873,6 +2013,15 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                               <p className="text-[10px] text-gray-400 mt-0.5">
                                 {doc.filename.startsWith('paste_') ? 'Paste' : 'Doc'} · {new Date(doc.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               </p>
+                              {autoDocId === doc.id && autoPipelineStep && autoPipelineStep !== 'done' && (
+                                <p className="text-[10px] text-blue-600 mt-0.5 flex items-center gap-1">
+                                  <svg className="animate-spin h-2.5 w-2.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                                  </svg>
+                                  {pipelineStepLabel[autoPipelineStep] || autoPipelineStep}
+                                </p>
+                              )}
                             </div>
 
                             {/* Bottom-right: open chunks */}
@@ -2109,6 +2258,16 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                   </button>
                 )}
               </div>
+              {/* Center: Full Auto checkbox */}
+              <label className="flex items-center gap-1.5 text-[11px] text-gray-500 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={fullAuto}
+                  onChange={e => setFullAuto(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5"
+                />
+                Full auto
+              </label>
               {/* Right: Cancel + Process */}
               <div className="flex items-center gap-2">
                 <button
@@ -2119,7 +2278,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                 </button>
                 <button
                   onClick={handlePasteSubmit}
-                  disabled={!pastedHtml || !pasteName.trim() || pasting}
+                  disabled={!pastedHtml || !pasteName.trim() || pasting || (fullAuto && !selectedRuleSetId)}
                   className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-white rounded-lg bg-blue-700 hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {pasting ? (
@@ -2130,6 +2289,8 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                       </svg>
                       Processing...
                     </>
+                  ) : fullAuto ? (
+                    'Full auto process'
                   ) : (
                     'Process & chunk'
                   )}

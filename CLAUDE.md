@@ -6,7 +6,7 @@ A tool for generating Anki-style cloze flashcards from medical study documents (
 ## Tech Stack
 - **Backend**: FastAPI + SQLAlchemy 2.0 + SQLite + Anthropic Python SDK
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS v4 + TanStack Table
-- **AI**: Anthropic Claude — Haiku 4.5 fixed for chunking/topic detection, Sonnet 4.6 default for card/vignette/teaching case generation (generation models configurable per-session via Settings popover, persisted in localStorage)
+- **AI**: Anthropic Claude — Sonnet 4.6 default for chunking, Haiku 4.5 for topic detection, Sonnet 4.6 default for card/vignette/teaching case generation (generation models configurable per-session via Settings popover, persisted in localStorage)
 - **Dev**: Python 3.12 venv, Node 24, Vite dev server proxying `/api` to FastAPI on :8000
 
 ## Development Commands
@@ -36,7 +36,7 @@ v3/
 │   │   └── export.py      # CSV export by doc or curriculum subtree
 │   └── services/
 │       ├── chunker.py     # parse_and_chunk_docx / parse_and_chunk_html → semantic chunks via Claude; model param threaded through
-│       ├── generator.py   # generate_cards_for_chunk, regenerate_single_card; ANCHOR_INSTRUCTION + parse_card_output (3-part pipe format)
+│       ├── generator.py   # generate_cards_for_chunk, regenerate_single_card; ANCHOR_INSTRUCTION + parse_card_output (4-part pipe format: number|card|extra|source:P1-P3)
 │       ├── supplemental_generator.py  # generate vignette + teaching case per condition group
 │       ├── topic_detector.py  # detect_chunk_topics — matches chunks to curriculum tree
 │       └── cost_estimator.py  # Token count approximation × model pricing
@@ -71,16 +71,16 @@ v3/
 - **curriculum**: id, parent_id (self-FK), name, level, path (full breadcrumb), children/parent rels
 - **documents**: id, filename (uuid-prefixed), original_name, uploaded_at, chunk_count
 - **chunks**: id, document_id (FK cascade), chunk_index, heading, content_type, source_text, source_html, ref_img (base64 data URI, nullable), rule_subset (JSON), card_count, topic_id (FK → curriculum, nullable), topic_path (string), topic_confirmed (bool)
-- **cards**: id, chunk_id (FK cascade), document_id (FK cascade), card_number, front_html, front_text, tags (JSON), extra, vignette, teaching_case, ref_img, ref_img_position (front/back), note_id (bigint, Anki-compatible ms timestamp), status (active/rejected), needs_review, is_reviewed, created_at, updated_at
+- **cards**: id, chunk_id (FK cascade), document_id (FK cascade), card_number, front_html, front_text, tags (JSON), extra, vignette, teaching_case, ref_img, source_ref (paragraph range within chunk, e.g. "P3-P5"), ref_img_position (front/back), note_id (bigint, Anki-compatible ms timestamp), status (active/rejected), needs_review, is_reviewed, created_at, updated_at
 - **generation_jobs**: id, document_id, job_type (cards/vignettes/teaching_cases), scope, chunk_ids (JSON), rule_set_id, model, status (pending/running/done/failed), total/processed_chunks, total_cards, estimated/actual tokens+cost, error_message, started_at, finished_at
 - **ai_usage_log**: id, operation (chunking/topic_detection/card_generation/card_regen), model, input_tokens, output_tokens, cost_usd, document_id, chunk_id, card_id, job_id, created_at
 
 ## Key Conventions
 - FastAPI routes have NO trailing slash — frontend api.ts must not append `/`
-- Card generation output format: `number|card text|additional context (optional)` (pipe-delimited, one per line). Parser splits on first `|` for card_number, second `|` separates front_html from extra field.
+- Card generation output format: `number|card text|additional context (optional)|source:P1-P3` (pipe-delimited, one per line). Parser splits on `|` for card_number, front_html, extra, and source_ref fields. Source text is numbered with [P1], [P2] etc. markers before sending to AI.
 - `parse_card_output()` in `generator.py` also runs `fix_markdown_bold()` (converts `**term**` → `<b>term</b>`) and `format_extra_as_list()` (normalizes `;` and `-` delimited lists to `<br>•` bullet format)
 - Cloze format: `{{c1::term}}` — rendered with blue underline in Anki view (table + Ankify modal)
-- All AI calls use `temperature=0.2` for consistent output across runs (chunking, topic detection, card generation, card regeneration)
+- All AI calls use `temperature=0` for consistent output across runs (chunking, topic detection, card generation, card regeneration)
 - All AI calls go through the Anthropic SDK only (`anthropic.Anthropic`). OpenAI models are NOT supported without a client abstraction layer refactor.
 - Background tasks use FastAPI `BackgroundTasks` with a new `SessionLocal()` (not the request session)
 - SQLite JSON columns (tags, chunk_ids, rule_subset) use SQLAlchemy `JSON` type
@@ -89,7 +89,7 @@ v3/
 - Chunking model is passed from frontend settings → API query/body param → chunker service → Claude call
 - `doc_to_dict()` always computes `total_cards` by summing chunk.card_count across all chunks
 - Generation uses 3 concurrent workers with per-chunk rate-limit retry (20/40/80s exponential backoff, 4 attempts max)
-- `ANCHOR_INSTRUCTION` in `generator.py` is a hardcoded system prompt prepended to all card generation calls — defines anchor rules, cloze-vs-bold decision logic, and the three-part output format. It is NOT a user-editable rule set.
+- `ANCHOR_INSTRUCTION` in `generator.py` is a hardcoded system prompt prepended to all card generation calls — defines anchor rules, cloze-vs-bold decision logic, and the four-part output format (including source paragraph references). It is NOT a user-editable rule set.
 - Card regeneration (`cards.py`) explicitly fetches `rule_type='generation'` default rule set (not just any `is_default=True`)
 
 ## Adding Models
@@ -130,7 +130,7 @@ Use `GET /api/usage/summary` to return total and per-operation spend.
 - `DocumentViewerModal.tsx` exists but is not used anywhere — safe to delete.
 - When in doubt about a topic path format, it is `Parent > Child > Leaf` with ` > ` separators (e.g. `Emergency Medicine > Cardiovascular > Endocarditis`).
 - Do not change card output format without updating both `generator.py` parsing logic and the frontend cloze renderer.
-- Card output format is `number|card text|additional context (optional)`. The third part goes to the `extra` field. Do not add more `|` delimiters.
+- Card output format is `number|card text|additional context (optional)|source:P1-P3`. The third part goes to the `extra` field, the fourth is the source paragraph reference stored in `source_ref`.
 - `topic_path` is passed to card generation prompts as "Curriculum context (for reference only)" — it's guidance, not a constraint.
 - Card generation injects `ANCHOR_INSTRUCTION` (hardcoded in `generator.py`) — defines anchor rules, cloze-vs-bold decision logic, and formatting rules (`**` is forbidden, use `<b>` HTML). This is prepended to the user's rules before each generation call.
 - Card generation includes sibling chunks (same topic_id) as read-only context to give the AI broader topic awareness.
