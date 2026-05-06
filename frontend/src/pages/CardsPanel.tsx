@@ -590,10 +590,10 @@ export default function CardsPanel({
 
   // ── Card list state ────────────────────────────────────────────────────────
   const [cards, setCards] = useState<Card[]>([]);
+  const [totalCards, setTotalCards] = useState(0);
   const [cardsLoading, setCardsLoading] = useState(false);
-  // Invalidate triggers a refetch on next chunk switch
   const invalidateDocCache = useCallback(() => {
-    // No-op — we now fetch per-chunk directly from API
+    // Trigger refetch on current page
   }, []);
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -669,29 +669,30 @@ export default function CardsPanel({
 
   const [colVisPopover, setColVisPopover] = useState(false);
 
-  // ── Fetch cards ────────────────────────────────────────────────────────────
+  // ── Fetch cards (server-side pagination) ────────────────────────────────────
   const fetchCards = useCallback(
-    async (docId: number | null, topicPathFilter?: string | null, chunk?: number | null, silent?: boolean) => {
+    async (docId: number | null, topicPathFilter?: string | null, chunk?: number | null, silent?: boolean, page?: number) => {
       if (!silent) setCardsLoading(true);
+      const pageSize = 50;
+      const offset = (page ?? 0) * pageSize;
       try {
-        let rawCards: Card[];
+        let resp;
         if (docId != null) {
           if (chunk != null) {
-            // Specific chunk selected — fetch only that chunk's cards
-            const resp = await getCards({ document_id: docId, chunk_id: chunk, limit: 500 });
-            rawCards = resp.cards;
+            resp = await getCards({ document_id: docId, chunk_id: chunk, limit: pageSize, offset });
           } else {
-            // All chunks — load all cards (TanStack Table paginates client-side)
-            const resp = await getCards({ document_id: docId, limit: 5000 });
-            rawCards = resp.cards;
+            resp = await getCards({ document_id: docId, limit: pageSize, offset });
           }
         } else if (topicPathFilter) {
-          const topicResp = await getCards({ tag: topicPathFilter, limit: 5000 });
-          rawCards = topicResp.cards;
+          resp = await getCards({ tag: topicPathFilter, limit: pageSize, offset });
         } else {
-          rawCards = [];
+          setCards([]);
+          setTotalCards(0);
+          if (!silent) setCardsLoading(false);
+          return;
         }
-        setCards(rawCards);
+        setCards(resp.cards);
+        setTotalCards(resp.total);
       } catch {
         // silently fail
       } finally {
@@ -721,15 +722,18 @@ export default function CardsPanel({
     if (docChanged || !documentId) {
       // Full reset when switching documents or going to topic view
       setCards([]);
+      setTotalCards(0);
       setUnreviewedOnly(false);
       setStatusFilter('all');
       setSearchQ('');
       setViewMode('table');
-      if (documentId != null) fetchCards(documentId, null, chunkId ?? null);
-      else if (topicPath) fetchCards(null, topicPath);
+      setPagination(prev => ({ ...prev, pageIndex: 0 }));
+      if (documentId != null) fetchCards(documentId, null, chunkId ?? null, false, 0);
+      else if (topicPath) fetchCards(null, topicPath, null, false, 0);
     } else {
-      // Same document, chunk changed — filter client-side if cached
-      fetchCards(documentId, null, chunkId ?? null);
+      // Same document, chunk changed
+      setPagination(prev => ({ ...prev, pageIndex: 0 }));
+      fetchCards(documentId, null, chunkId ?? null, false, 0);
     }
   }, [documentId, chunkId, topicPath, fetchCards]);
 
@@ -743,8 +747,12 @@ export default function CardsPanel({
   // ── Clean up interval on unmount ──────────────────────────────────────────
   useEffect(() => { return () => { if (intervalRef.current) clearInterval(intervalRef.current); }; }, []);
 
-  // ── Clear DOM selection on page change (td refs become stale) ─────────────
-  useEffect(() => { selectedTdRef.current = null; }, [pagination.pageIndex]);
+  // ── Refetch when page changes (server-side pagination) ───────────────────
+  useEffect(() => {
+    selectedTdRef.current = null;
+    if (documentId != null) fetchCards(documentId, null, chunkId ?? null, true, pagination.pageIndex);
+    else if (topicPath) fetchCards(null, topicPath, null, true, pagination.pageIndex);
+  }, [pagination.pageIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Estimate cost ──────────────────────────────────────────────────────────
   async function handleEstimate() {
@@ -1503,9 +1511,11 @@ export default function CardsPanel({
     columns,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    manualPagination: true,
+    pageCount: Math.ceil(totalCards / pagination.pageSize) || 1,
     enableColumnResizing: true,
     columnResizeMode: 'onChange',
-    autoResetPageIndex: true,
+    autoResetPageIndex: false,
     state: { columnSizing, pagination, columnVisibility },
     onColumnSizingChange: (updater) => {
       setColumnSizing(prev => {
