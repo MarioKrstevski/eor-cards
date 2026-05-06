@@ -676,15 +676,15 @@ export default function CardsPanel({
         if (docId != null) {
           if (chunk != null) {
             // Specific chunk selected — fetch only that chunk's cards
-            const resp = await getCards({ document_id: docId, chunk_id: chunk, limit: 200 });
+            const resp = await getCards({ document_id: docId, chunk_id: chunk, limit: 500 });
             rawCards = resp.cards;
           } else {
-            // All chunks — fetch first page
-            const resp = await getCards({ document_id: docId, limit: 50 });
+            // All chunks — load all cards (TanStack Table paginates client-side)
+            const resp = await getCards({ document_id: docId, limit: 5000 });
             rawCards = resp.cards;
           }
         } else if (topicPathFilter) {
-          const topicResp = await getCards({ tag: topicPathFilter, limit: 50 });
+          const topicResp = await getCards({ tag: topicPathFilter, limit: 5000 });
           rawCards = topicResp.cards;
         } else {
           rawCards = [];
