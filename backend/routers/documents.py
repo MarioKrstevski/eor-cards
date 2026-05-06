@@ -474,8 +474,11 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
     db.query(GenerationJob).filter(GenerationJob.document_id == doc_id).update(
         {"document_id": None}, synchronize_session=False
     )
-    # Delete cards and chunks in batches to avoid timeout on large docs
+    # Delete cards, chunk images, and chunks to avoid timeout on large docs
     db.query(Card).filter(Card.document_id == doc_id).delete(synchronize_session=False)
+    chunk_ids = [r[0] for r in db.query(Chunk.id).filter(Chunk.document_id == doc_id).all()]
+    if chunk_ids:
+        db.query(ChunkImage).filter(ChunkImage.chunk_id.in_(chunk_ids)).delete(synchronize_session=False)
     db.query(Chunk).filter(Chunk.document_id == doc_id).delete(synchronize_session=False)
     db.delete(doc)
     db.commit()
