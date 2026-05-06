@@ -700,7 +700,7 @@ function PostGenScreen({ docId, totalCards, onSkip, refreshUsage }: PostGenScree
   async function handleGenerateClick() {
     setLoading(true);
     try {
-      const resp = await getCards({ document_id: docId, limit: 200 });
+      const resp = await getCards({ document_id: docId, limit: 2000 });
       const cardIds = resp.cards.filter((c) => c.status === 'active').map((c) => c.id);
       if (cardIds.length === 0) { setLoading(false); return; }
 

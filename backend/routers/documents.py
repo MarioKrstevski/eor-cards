@@ -1251,11 +1251,13 @@ def _run_simple_pipeline(
         db.commit()
 
         # ── Step 4: Generate vignettes & teaching cases ──────────────────────
-        if supplemental_rule_set_id:
+        # Fall back to card generation rule set if no supplemental rule set specified
+        effective_supp_rule_set_id = supplemental_rule_set_id or rule_set_id
+        if effective_supp_rule_set_id:
             job.pipeline_step = "supplementals"
             db.commit()
 
-            supp_rs = db.get(RuleSet, supplemental_rule_set_id)
+            supp_rs = db.get(RuleSet, effective_supp_rule_set_id)
             if supp_rs:
                 supp_rules_text = supp_rs.content
                 all_cards = db.query(Card).filter(
