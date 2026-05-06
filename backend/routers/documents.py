@@ -465,6 +465,10 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
             os.remove(file_path)
     except OSError:
         pass
+    # Delete cards and chunks in batches to avoid timeout on large docs
+    db.query(Card).filter(Card.document_id == doc_id).delete(synchronize_session=False)
+    db.query(Chunk).filter(Chunk.document_id == doc_id).delete(synchronize_session=False)
+    db.query(GenerationJob).filter(GenerationJob.document_id == doc_id).delete(synchronize_session=False)
     db.delete(doc)
     db.commit()
 
