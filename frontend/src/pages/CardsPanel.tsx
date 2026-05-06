@@ -23,8 +23,10 @@ import {
   bulkDeleteCards,
   estimateSupplemental,
   startSupplemental,
+  getChunkImages,
+  uploadChunkImage,
 } from '../api';
-import type { Card, CostEstimate, CardStatus, SupplementalEstimate } from '../types';
+import type { Card, ChunkImage, CostEstimate, CardStatus, SupplementalEstimate } from '../types';
 import ConfirmModal from '../components/ConfirmModal';
 import AlertModal from '../components/AlertModal';
 import AnkifyModal from '../components/AnkifyModal';
@@ -1248,19 +1250,34 @@ export default function CardsPanel({
         size: 200,
         cell: ({ row }) => {
           const card = row.original;
+          const [showGallery, setShowGallery] = useState(false);
+          const [galleryImages, setGalleryImages] = useState<ChunkImage[]>([]);
+          const [loadingGallery, setLoadingGallery] = useState(false);
 
-          async function applyImage(dataUri: string) {
+          async function applyImageFromGallery(imgId: number) {
             try {
-              const updated = await updateCard(card.id, { ref_img: dataUri });
-              setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: updated.ref_img } : c));
+              const updated = await updateCard(card.id, { ref_img_id: imgId });
+              setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: updated.ref_img, ref_img_id: updated.ref_img_id } : c));
               invalidateDocCache();
-            } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to save image'); }
+              setShowGallery(false);
+            } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to assign image'); }
+          }
+
+          async function uploadNewToGallery(dataUri: string) {
+            try {
+              const img = await uploadChunkImage(card.chunk_id, dataUri);
+              // Assign to card
+              const updated = await updateCard(card.id, { ref_img_id: img.id });
+              setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: updated.ref_img, ref_img_id: updated.ref_img_id } : c));
+              invalidateDocCache();
+              setShowGallery(false);
+            } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to upload image'); }
           }
 
           function handleFile(file: File) {
             if (!file.type.startsWith('image/')) return;
             const reader = new FileReader();
-            reader.onload = (e) => { if (e.target?.result) applyImage(e.target.result as string); };
+            reader.onload = (e) => { if (e.target?.result) uploadNewToGallery(e.target.result as string); };
             reader.readAsDataURL(file);
           }
 
@@ -1272,7 +1289,7 @@ export default function CardsPanel({
                 if (imageType) {
                   const blob = await item.getType(imageType);
                   const reader = new FileReader();
-                  reader.onload = (e) => { if (e.target?.result) applyImage(e.target.result as string); };
+                  reader.onload = (e) => { if (e.target?.result) uploadNewToGallery(e.target.result as string); };
                   reader.readAsDataURL(blob);
                   return;
                 }
@@ -1280,8 +1297,18 @@ export default function CardsPanel({
             } catch { setActionError('Paste failed — try using the upload button instead'); }
           }
 
+          async function openGallery() {
+            setShowGallery(true);
+            setLoadingGallery(true);
+            try {
+              const imgs = await getChunkImages(card.chunk_id);
+              setGalleryImages(imgs);
+            } catch { setGalleryImages([]); }
+            setLoadingGallery(false);
+          }
+
           return (
-            <div className="flex flex-col items-center gap-1.5">
+            <div className="flex flex-col items-center gap-1.5 relative">
               {card.ref_img ? (
                 <>
                   <img src={card.ref_img} alt="Reference" className="max-h-24 max-w-full rounded" />
@@ -1310,8 +1337,9 @@ export default function CardsPanel({
                       className="text-xs px-2 py-0.5 rounded bg-red-50 text-red-500 hover:bg-red-100"
                       onClick={async () => {
                         try {
-                          await updateCard(card.id, { ref_img: '' });
-                          setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: null } : c));
+                          // Clear both ref_img and ref_img_id
+                          await updateCard(card.id, { ref_img: '', ref_img_id: 0 });
+                          setCards(prev => prev.map(c => c.id === card.id ? { ...c, ref_img: null, ref_img_id: null } : c));
                           invalidateDocCache();
                         } catch (err) { setActionError(err instanceof Error ? err.message : 'Failed to remove image'); }
                       }}
@@ -1320,6 +1348,10 @@ export default function CardsPanel({
                 </>
               ) : (
                 <div className="flex flex-col items-center gap-1">
+                  <button
+                    onClick={openGallery}
+                    className="text-xs px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+                  >Gallery</button>
                   <label className="cursor-pointer text-xs px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors">
                     Upload
                     <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
@@ -1328,6 +1360,38 @@ export default function CardsPanel({
                     onClick={handlePaste}
                     className="text-xs px-2.5 py-1 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
                   >Paste</button>
+                </div>
+              )}
+              {showGallery && (
+                <div className="absolute z-50 top-full mt-1 left-1/2 -translate-x-1/2 bg-white border border-gray-200 rounded-lg shadow-lg p-3 min-w-[220px]">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-medium text-gray-700">Chunk Gallery</span>
+                    <button onClick={() => setShowGallery(false)} className="text-gray-400 hover:text-gray-600 text-sm">x</button>
+                  </div>
+                  {loadingGallery ? (
+                    <p className="text-xs text-gray-400">Loading...</p>
+                  ) : galleryImages.length === 0 ? (
+                    <p className="text-xs text-gray-400">No images in this chunk's gallery.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
+                      {galleryImages.map(img => (
+                        <button
+                          key={img.id}
+                          onClick={() => applyImageFromGallery(img.id)}
+                          className="border border-gray-200 rounded hover:border-indigo-400 p-0.5 transition-colors"
+                        >
+                          <img src={img.data_uri} alt="" className="h-16 w-auto rounded" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 pt-2 border-t border-gray-100 flex gap-1">
+                    <label className="cursor-pointer text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200">
+                      Upload new
+                      <input type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }} />
+                    </label>
+                    <button onClick={handlePaste} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 hover:bg-gray-200">Paste</button>
+                  </div>
                 </div>
               )}
             </div>

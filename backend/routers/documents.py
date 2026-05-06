@@ -699,6 +699,16 @@ def _run_full_auto_pipeline(
         for ch in chunk_objs:
             db.refresh(ch)
 
+        # Save chunk images to gallery
+        auto_chunk_first_image = {}
+        for ch in chunk_objs:
+            if ch.ref_img:
+                img = ChunkImage(chunk_id=ch.id, data_uri=ch.ref_img, position=0)
+                db.add(img)
+                db.flush()
+                auto_chunk_first_image[ch.id] = img.id
+        db.commit()
+
         # Log chunking usage
         chunking_cost = compute_cost(chunking_model, chunking_usage["input_tokens"], chunking_usage["output_tokens"])
         db.add(AIUsageLog(
@@ -813,6 +823,7 @@ def _run_full_auto_pipeline(
             for future in as_completed(futures):
                 chunk_data, cards_data, needs_review, usage = future.result()
                 tags = chunk_data["topic_path"].split(" > ") if chunk_data["topic_path"] else []
+                gallery_img_id = auto_chunk_first_image.get(chunk_data["id"])
                 for card_data in cards_data:
                     card = Card(
                         chunk_id=chunk_data["id"],
@@ -824,7 +835,8 @@ def _run_full_auto_pipeline(
                         source_ref=card_data.get("source_ref"),
                         tags=tags,
                         needs_review=needs_review,
-                        ref_img=chunk_data.get("ref_img"),
+                        ref_img_id=gallery_img_id,
+                        ref_img=chunk_data.get("ref_img") if not gallery_img_id else None,
                         note_id=next_note_id(),
                     )
                     db.add(card)
@@ -1261,6 +1273,8 @@ def _run_simple_pipeline(
                         })
                         break
 
+                # Use gallery image id if available, otherwise fall back to inline ref_img
+                gallery_img_id = chunk_first_image.get(chunk_data["id"])
                 for card_data in cards_data:
                     card = Card(
                         chunk_id=chunk_data["id"],
@@ -1272,7 +1286,8 @@ def _run_simple_pipeline(
                         source_ref=card_data.get("source_ref"),
                         tags=tags,
                         needs_review=needs_review,
-                        ref_img=chunk_data.get("ref_img"),
+                        ref_img_id=gallery_img_id,
+                        ref_img=chunk_data.get("ref_img") if not gallery_img_id else None,
                         note_id=next_note_id(),
                     )
                     db.add(card)

@@ -8,6 +8,7 @@ import type {
   ReassignPreviewResult,
   Card,
   CardStatus,
+  ChunkImage,
   Model,
   CostEstimate,
   StartGenerationResponse,
@@ -192,6 +193,22 @@ export async function pasteDocumentSimple(params: {
   return res.data;
 }
 
+// ─── Chunk Images ────────────────────────────────────────────────────────────
+
+export async function getChunkImages(chunkId: number): Promise<ChunkImage[]> {
+  const res = await http.get<ChunkImage[]>(`/chunks/${chunkId}/images`);
+  return res.data;
+}
+
+export async function uploadChunkImage(chunkId: number, dataUri: string): Promise<ChunkImage> {
+  const res = await http.post<ChunkImage>(`/chunks/${chunkId}/images`, { data_uri: dataUri });
+  return res.data;
+}
+
+export async function deleteChunkImage(imageId: number): Promise<void> {
+  await http.delete(`/chunk-images/${imageId}`);
+}
+
 // ─── Cards ────────────────────────────────────────────────────────────────────
 
 export interface PaginatedCards {
@@ -226,6 +243,7 @@ export async function updateCard(
     status?: CardStatus;
     is_reviewed?: boolean;
     ref_img?: string | null;
+    ref_img_id?: number | null;
     ref_img_position?: 'front' | 'back';
   }
 ): Promise<Card> {

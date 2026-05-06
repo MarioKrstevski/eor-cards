@@ -85,6 +85,15 @@ export interface ReassignPreviewResult {
   ai_costs: { topic_detection_usd: number; total_usd: number };
 }
 
+// ─── Chunk Images ────────────────────────────────────────────────────────────
+
+export interface ChunkImage {
+  id: number;
+  chunk_id: number;
+  data_uri: string;
+  position: number;
+}
+
 // ─── Cards ────────────────────────────────────────────────────────────────────
 
 export type CardStatus = 'active' | 'rejected';
@@ -108,6 +117,7 @@ export interface Card {
   chunk_heading: string | null;
   chunk_source_html: string | null;
   ref_img: string | null;
+  ref_img_id: number | null;
   ref_img_position: 'front' | 'back';
   source_ref?: string | null;
   note_id: number;
