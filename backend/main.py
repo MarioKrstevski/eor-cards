@@ -142,6 +142,41 @@ app.include_router(usage.router, prefix="/api/usage", tags=["usage"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(requests.router, prefix="/api/requests", tags=["requests"])
 
+@app.post("/api/admin/clear-storage")
+def clear_storage():
+    """Clear uploaded files and chunk images to free disk space."""
+    import shutil
+    from backend.config import DATA_DIR
+    cleared = {}
+    for subdir in ("uploads", "chunk_images"):
+        path = os.path.join(DATA_DIR, subdir)
+        if os.path.exists(path):
+            count = len(os.listdir(path))
+            shutil.rmtree(path)
+            os.makedirs(path, exist_ok=True)
+            cleared[subdir] = count
+    return {"cleared": cleared, "status": "ok"}
+
+
+@app.get("/api/admin/disk-usage")
+def disk_usage():
+    """Show disk usage for data directory."""
+    from backend.config import DATA_DIR
+    usage = {}
+    for item in os.listdir(DATA_DIR):
+        path = os.path.join(DATA_DIR, item)
+        if os.path.isfile(path):
+            usage[item] = f"{os.path.getsize(path) / 1024 / 1024:.1f} MB"
+        elif os.path.isdir(path):
+            total = sum(
+                os.path.getsize(os.path.join(dp, f))
+                for dp, _, files in os.walk(path)
+                for f in files
+            )
+            usage[item] = f"{total / 1024 / 1024:.1f} MB"
+    return usage
+
+
 if os.path.exists(STATIC_DIR) and os.listdir(STATIC_DIR):
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
