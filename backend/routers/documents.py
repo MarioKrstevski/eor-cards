@@ -937,62 +937,68 @@ async def upload_document_simple(
     supplemental_rule_set_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    """Upload .docx → deterministic split → batched card generation (simplified pipeline)."""
-    if not file.filename.endswith(".docx"):
-        raise HTTPException(422, "Only .docx files supported")
+    """Upload .docx → deterministic split → per-chunk parallel generation."""
+    try:
+        if not file.filename.endswith(".docx"):
+            raise HTTPException(422, "Only .docx files supported")
 
-    rs = db.get(RuleSet, rule_set_id)
-    if not rs:
-        raise HTTPException(404, "Rule set not found")
+        rs = db.get(RuleSet, rule_set_id)
+        if not rs:
+            raise HTTPException(404, f"Rule set {rule_set_id} not found")
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    stem, ext = os.path.splitext(file.filename)
-    unique_filename = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
-    save_path = os.path.join(UPLOAD_DIR, unique_filename)
-    with open(save_path, "wb") as f:
-        f.write(await file.read())
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        stem, ext = os.path.splitext(file.filename)
+        unique_filename = f"{stem}_{uuid.uuid4().hex[:8]}{ext}"
+        save_path = os.path.join(UPLOAD_DIR, unique_filename)
+        with open(save_path, "wb") as f:
+            f.write(await file.read())
 
-    doc = Document(
-        filename=unique_filename,
-        original_name=file.filename,
-        chunk_count=0,
-    )
-    db.add(doc)
-    db.flush()
+        doc = Document(
+            filename=unique_filename,
+            original_name=file.filename,
+            chunk_count=0,
+        )
+        db.add(doc)
+        db.flush()
 
-    job = GenerationJob(
-        document_id=doc.id,
-        job_type="simple_batch",
-        scope="all",
-        rule_set_id=rule_set_id,
-        model=model,
-        status=JobStatus.pending,
-        total_chunks=0,
-        processed_chunks=0,
-        total_cards=0,
-        pipeline_step="parsing",
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(doc)
-    db.refresh(job)
+        job = GenerationJob(
+            document_id=doc.id,
+            job_type="simple_batch",
+            scope="all",
+            rule_set_id=rule_set_id,
+            model=model,
+            status=JobStatus.pending,
+            total_chunks=0,
+            processed_chunks=0,
+            total_cards=0,
+            pipeline_step="parsing",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(doc)
+        db.refresh(job)
 
-    # Parse supplemental_rule_set_id from string (FormData sends strings)
-    supp_id = int(supplemental_rule_set_id) if supplemental_rule_set_id else None
+        # Parse supplemental_rule_set_id from string (FormData sends strings)
+        supp_id = int(supplemental_rule_set_id) if supplemental_rule_set_id else None
 
-    background_tasks.add_task(
-        _run_simple_pipeline,
-        doc.id,
-        job.id,
-        save_path,
-        None,
-        model,
-        rule_set_id,
-        supp_id,
-        True,
-    )
+        background_tasks.add_task(
+            _run_simple_pipeline,
+            doc.id,
+            job.id,
+            save_path,
+            None,
+            model,
+            rule_set_id,
+            supp_id,
+            True,
+        )
 
-    return {"document_id": doc.id, "job_id": job.id}
+        return {"document_id": doc.id, "job_id": job.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("upload-simple failed")
+        raise HTTPException(500, f"Upload failed: {type(e).__name__}: {e}")
 
 
 @router.post("/paste-simple", status_code=201)
@@ -1001,54 +1007,60 @@ async def paste_document_simple(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Paste HTML → deterministic split → batched card generation (simplified pipeline)."""
-    if not body.html or not body.html.strip():
-        raise HTTPException(422, "No HTML content provided")
-    if not body.name or not body.name.strip():
-        raise HTTPException(422, "Document name is required")
+    """Paste HTML → deterministic split → per-chunk parallel generation."""
+    try:
+        if not body.html or not body.html.strip():
+            raise HTTPException(422, "No HTML content provided")
+        if not body.name or not body.name.strip():
+            raise HTTPException(422, "Document name is required")
 
-    rs = db.get(RuleSet, body.rule_set_id)
-    if not rs:
-        raise HTTPException(404, "Rule set not found")
+        rs = db.get(RuleSet, body.rule_set_id)
+        if not rs:
+            raise HTTPException(404, f"Rule set {body.rule_set_id} not found")
 
-    doc = Document(
-        filename=f"paste_{uuid.uuid4().hex[:8]}.html",
-        original_name=body.name.strip(),
-        chunk_count=0,
-    )
-    db.add(doc)
-    db.flush()
+        doc = Document(
+            filename=f"paste_{uuid.uuid4().hex[:8]}.html",
+            original_name=body.name.strip(),
+            chunk_count=0,
+        )
+        db.add(doc)
+        db.flush()
 
-    job = GenerationJob(
-        document_id=doc.id,
-        job_type="simple_batch",
-        scope="all",
-        rule_set_id=body.rule_set_id,
-        model=body.model,
-        status=JobStatus.pending,
-        total_chunks=0,
-        processed_chunks=0,
-        total_cards=0,
-        pipeline_step="parsing",
-    )
-    db.add(job)
-    db.commit()
-    db.refresh(doc)
-    db.refresh(job)
+        job = GenerationJob(
+            document_id=doc.id,
+            job_type="simple_batch",
+            scope="all",
+            rule_set_id=body.rule_set_id,
+            model=body.model,
+            status=JobStatus.pending,
+            total_chunks=0,
+            processed_chunks=0,
+            total_cards=0,
+            pipeline_step="parsing",
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(doc)
+        db.refresh(job)
 
-    background_tasks.add_task(
-        _run_simple_pipeline,
-        doc.id,
-        job.id,
-        None,
-        body.html,
-        body.model,
-        body.rule_set_id,
-        body.supplemental_rule_set_id,
-        False,
-    )
+        background_tasks.add_task(
+            _run_simple_pipeline,
+            doc.id,
+            job.id,
+            None,
+            body.html,
+            body.model,
+            body.rule_set_id,
+            body.supplemental_rule_set_id,
+            False,
+        )
 
-    return {"document_id": doc.id, "job_id": job.id}
+        return {"document_id": doc.id, "job_id": job.id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("paste-simple failed")
+        raise HTTPException(500, f"Paste failed: {type(e).__name__}: {e}")
 
 
 def _run_simple_pipeline(
