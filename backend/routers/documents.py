@@ -1058,15 +1058,10 @@ def _run_simple_pipeline(
     supplemental_rule_set_id: Optional[int],
     is_docx: bool,
 ):
-    """Background task: simplified pipeline — deterministic parse → batch generate → supplementals."""
-    from backend.services.batch_generator import (
-        build_sections_from_elements,
-        build_chunks_from_sections,
-        pack_batches,
-        generate_batch,
-        assign_card_to_chunk,
-    )
+    """Background task: deterministic parse → per-chunk parallel generation → supplementals."""
+    from backend.services.batch_generator import build_chunks_from_sections, build_sections_from_elements
     from backend.services.chunker import parse_docx, parse_html_to_elements
+    from backend.services.generator import generate_cards_for_chunk, number_paragraphs
 
     db = SessionLocal()
     try:
@@ -1088,14 +1083,13 @@ def _run_simple_pipeline(
             _fail_auto_job(db, job_id, "No content could be extracted from the document")
             return
 
-        # ── Step 2: Build sections and chunks ────────────────────────────────
-        job.pipeline_step = "batching"
+        # ── Step 2: Build chunks deterministically (no AI) ───────────────────
+        job.pipeline_step = "splitting"
         db.commit()
 
         sections = build_sections_from_elements(elements)
-
-        # Create chunks in DB using major-heading splitting (fewer, larger chunks)
         chunk_dicts = build_chunks_from_sections(sections, elements)
+
         doc = db.get(Document, doc_id)
         doc.chunk_count = len(chunk_dicts)
 
@@ -1117,18 +1111,10 @@ def _run_simple_pipeline(
         for ch in chunk_objs:
             db.refresh(ch)
 
-        # Build curriculum tree string for the prompt
-        curriculum_nodes = db.query(Curriculum).all()
-        curriculum_tree = "\n".join(
-            f"  {n.path}" for n in curriculum_nodes if n.path
-        ) if curriculum_nodes else "No curriculum loaded"
-
-        # Pack sections into batches
-        batches = pack_batches(sections)
-        job.total_chunks = len(batches)
+        job.total_chunks = len(chunk_objs)
         db.commit()
 
-        # ── Step 3: Generate cards in batches ────────────────────────────────
+        # ── Step 3: Generate cards per chunk IN PARALLEL ─────────────────────
         job.pipeline_step = "generating"
         db.commit()
 
@@ -1136,81 +1122,120 @@ def _run_simple_pipeline(
         rs = db.get(RuleSet, rule_set_id)
         rules_text = rs.content
 
+        # Build curriculum tree for inline topic tagging
+        curriculum_nodes = db.query(Curriculum).all()
+        curriculum_tree = "\n".join(
+            f"  {n.path}" for n in curriculum_nodes if n.path
+        ) if curriculum_nodes else ""
+
+        # Pre-load chunk data for thread safety
+        chunks_data = []
+        for ch in chunk_objs:
+            chunks_data.append({
+                "id": ch.id,
+                "source_text": ch.source_text,
+                "heading": ch.heading,
+                "ref_img": ch.ref_img,
+            })
+
         total_cards = 0
         total_input_tokens = 0
         total_output_tokens = 0
         note_id_base = int(time.time() * 1000)
-        note_id_counter = 0
+        note_id_counter = {"value": 0}
+        note_id_lock = threading.Lock()
 
-        for batch_idx, batch in enumerate(batches):
-            cards_data = None
-            usage = None
+        def next_note_id():
+            with note_id_lock:
+                nid = note_id_base + note_id_counter["value"]
+                note_id_counter["value"] += 1
+                return nid
+
+        # Append curriculum context to rules for inline topic tagging
+        rules_with_topics = rules_text
+        if curriculum_tree:
+            rules_with_topics += (
+                "\n\nCURRICULUM TOPICS — assign the most specific matching topic path "
+                "as the LAST tag on each card (e.g., 'Emergency Medicine > Cardiovascular > Endocarditis'). "
+                "Available topics:\n" + curriculum_tree
+            )
+
+        def process_chunk(chunk_data):
+            """Generate cards for one chunk with retry."""
             for attempt in range(4):
                 try:
-                    cards_data, usage = generate_batch(
-                        client, batch, rules_text, curriculum_tree, model
+                    cards_data, needs_review, usage = generate_cards_for_chunk(
+                        client,
+                        {
+                            "source_text": chunk_data["source_text"],
+                            "heading": chunk_data["heading"],
+                            "topic_path": "",  # no pre-assigned topic — model tags inline
+                        },
+                        rules_with_topics,
+                        model,
                     )
-                    break
+                    return chunk_data, cards_data, needs_review, usage
                 except anthropic.RateLimitError:
                     if attempt == 3:
                         raise
                     wait = 20 * (2 ** attempt)
-                    logger.warning("Rate limit on batch %d, retrying in %ds", batch_idx, wait)
+                    logger.warning(
+                        "Rate limit on chunk %d, retrying in %ds (attempt %d/4)",
+                        chunk_data["id"], wait, attempt + 1,
+                    )
                     time.sleep(wait)
 
-            if cards_data is None:
-                continue
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(process_chunk, cd): cd for cd in chunks_data}
+            for future in as_completed(futures):
+                try:
+                    chunk_data, cards_data, needs_review, usage = future.result()
+                except Exception as exc:
+                    logger.exception("Chunk %d failed: %s", futures[future]["id"], exc)
+                    job.processed_chunks += 1
+                    db.commit()
+                    continue
 
-            for card_data in cards_data:
-                topic_path = card_data.get("topic_path")
-                tags = topic_path.split(" > ") if topic_path and topic_path != "Uncategorized" else []
+                # Determine tags from chunk heading or curriculum match
+                # The model should include topic in its output if curriculum was provided
+                tags = []
+                # Try to match chunk heading to curriculum
+                heading_lower = chunk_data["heading"].lower().strip()
+                for node in curriculum_nodes:
+                    if node.path and node.name.lower().strip() == heading_lower:
+                        tags = node.path.split(" > ")
+                        # Also set chunk topic
+                        db.query(Chunk).filter(Chunk.id == chunk_data["id"]).update({
+                            "topic_id": node.id,
+                            "topic_path": node.path,
+                            "topic_confirmed": True,
+                        })
+                        break
 
-                # Map card to correct chunk using source paragraph numbers
-                target_chunk = assign_card_to_chunk(card_data, sections, chunk_objs)
+                for card_data in cards_data:
+                    card = Card(
+                        chunk_id=chunk_data["id"],
+                        document_id=doc_id,
+                        card_number=card_data["card_number"],
+                        front_html=card_data["front_html"],
+                        front_text=card_data["front_text"],
+                        extra=card_data.get("extra"),
+                        source_ref=card_data.get("source_ref"),
+                        tags=tags,
+                        needs_review=needs_review,
+                        ref_img=chunk_data.get("ref_img"),
+                        note_id=next_note_id(),
+                    )
+                    db.add(card)
 
-                card = Card(
-                    chunk_id=target_chunk.id if target_chunk else chunk_objs[0].id,
-                    document_id=doc_id,
-                    card_number=card_data["card_number"],
-                    front_html=card_data["front_html"],
-                    front_text=card_data["front_text"],
-                    extra=card_data.get("extra"),
-                    source_ref=card_data.get("source_ref"),
-                    tags=tags,
-                    needs_review=False,
-                    ref_img=target_chunk.ref_img if target_chunk else None,
-                    note_id=note_id_base + note_id_counter,
+                db.query(Chunk).filter(Chunk.id == chunk_data["id"]).update(
+                    {"card_count": len(cards_data)}
                 )
-                note_id_counter += 1
-                db.add(card)
-                total_cards += 1
-
-            total_input_tokens += usage["input_tokens"]
-            total_output_tokens += usage["output_tokens"]
-            job.processed_chunks = batch_idx + 1
-            db.commit()
-
-        # Update chunk card counts and topic paths
-        for ch in chunk_objs:
-            ch.card_count = db.query(Card).filter(Card.chunk_id == ch.id).count()
-            # Set chunk topic from most common card topic in that chunk
-            chunk_cards = db.query(Card).filter(Card.chunk_id == ch.id).all()
-            if chunk_cards:
-                topic_counts = {}
-                for c in chunk_cards:
-                    tp = c.tags[-1] if c.tags else None
-                    if tp:
-                        topic_counts[tp] = topic_counts.get(tp, 0) + 1
-                if topic_counts:
-                    best_topic = max(topic_counts, key=topic_counts.get)
-                    # Find matching curriculum node
-                    for node in curriculum_nodes:
-                        if node.path and node.path.endswith(best_topic):
-                            ch.topic_id = node.id
-                            ch.topic_path = node.path
-                            ch.topic_confirmed = True
-                            break
-        db.commit()
+                total_cards += len(cards_data)
+                total_input_tokens += usage["input_tokens"]
+                total_output_tokens += usage["output_tokens"]
+                job.processed_chunks += 1
+                db.commit()
 
         # Log card generation usage
         db.add(AIUsageLog(
@@ -1263,7 +1288,7 @@ def _run_simple_pipeline(
                             wait = 20 * (2 ** attempt)
                             logger.warning(
                                 "Rate limit on supplemental '%s', retrying in %ds",
-                                condition, wait
+                                condition, wait,
                             )
                             time.sleep(wait)
 
