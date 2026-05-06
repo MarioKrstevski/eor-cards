@@ -458,6 +458,13 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
     doc = db.get(Document, doc_id)
     if not doc:
         raise HTTPException(404)
+    # Clean up uploaded file from disk
+    file_path = os.path.join(UPLOAD_DIR, doc.filename)
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except OSError:
+        pass
     db.delete(doc)
     db.commit()
 
@@ -1091,6 +1098,11 @@ def _run_simple_pipeline(
             img_dir = os.path.join(DATA_DIR, "chunk_images")
             os.makedirs(img_dir, exist_ok=True)
             elements, images = parse_docx(file_path, img_dir)
+            # Delete uploaded file — no longer needed after parsing
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
         else:
             elements, images = parse_html_to_elements(html)
 
