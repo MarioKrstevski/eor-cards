@@ -1051,7 +1051,6 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
 
   function startAutoPolling(jobId: number, docId: number) {
     setAutoJobId(jobId);
-    setAutoDocId(docId);
     setAutoError(null);
     setAutoPipelineStep('chunking');
     registerActiveDocJob(docId, jobId, 'chunking');
