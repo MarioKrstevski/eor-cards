@@ -142,7 +142,7 @@ export type PipelineStep = 'chunking' | 'topics' | 'cards' | 'vignettes' | 'done
 
 export interface GenerationJob {
   id: number;
-  document_id: number;
+  document_id: number | null;
   status: JobStatus;
   total_chunks: number;
   processed_chunks: number;

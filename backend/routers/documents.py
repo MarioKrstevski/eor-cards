@@ -1150,6 +1150,16 @@ def _run_simple_pipeline(
         for ch in chunk_objs:
             db.refresh(ch)
 
+        # Save chunk images to gallery and build a mapping chunk_id -> first image id
+        chunk_first_image = {}
+        for ch in chunk_objs:
+            if ch.ref_img:
+                img = ChunkImage(chunk_id=ch.id, data_uri=ch.ref_img, position=0)
+                db.add(img)
+                db.flush()
+                chunk_first_image[ch.id] = img.id
+        db.commit()
+
         job.total_chunks = len(chunk_objs)
         db.commit()
 
