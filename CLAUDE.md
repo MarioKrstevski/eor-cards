@@ -140,3 +140,12 @@ Use `GET /api/usage/summary` to return total and per-operation spend.
 - Chat input is a textarea: Enter = newline, Cmd/Ctrl+Enter = send.
 - Chat panel has expand/collapse mode (fills viewport when expanded).
 - The paste pipeline has debug output (saves raw HTML to `data/debug_paste.html` and prints element levels to stderr) — remove before production.
+
+## Railway Deployment
+- **Production URL:** `https://eor-cards-production.up.railway.app`
+- **Project:** `refreshing-clarity` (Railway CLI: `railway link -p refreshing-clarity`)
+- **Admin endpoints (no auth):**
+  - `GET /api/admin/disk-usage` — shows size of each data subdirectory
+  - `POST /api/admin/clear-storage` — clears `uploads/` and `chunk_images/` to free disk space
+- **Disk management:** Uploaded .docx files auto-delete after parsing. If disk fills up, call `clear-storage` from browser console: `fetch('/api/admin/clear-storage', {method: 'POST'}).then(r => r.json()).then(console.log)`
+- **Volume:** SQLite DB at `/app/data/app.db` (~195MB with full card set). Volume size configurable in Railway dashboard under service Settings → Volumes.
