@@ -1260,21 +1260,32 @@ def _run_simple_pipeline(
                     db.commit()
                     continue
 
-                # Determine tags from chunk heading or curriculum match
-                # The model should include topic in its output if curriculum was provided
+                # Determine tags from chunk heading matched against curriculum
                 tags = []
-                # Try to match chunk heading to curriculum
                 heading_lower = chunk_data["heading"].lower().strip()
+                best_match = None
+                # Try exact match first, then substring match
                 for node in curriculum_nodes:
-                    if node.path and node.name.lower().strip() == heading_lower:
-                        tags = node.path.split(" > ")
-                        # Also set chunk topic
-                        db.query(Chunk).filter(Chunk.id == chunk_data["id"]).update({
-                            "topic_id": node.id,
-                            "topic_path": node.path,
-                            "topic_confirmed": True,
-                        })
+                    if not node.path:
+                        continue
+                    node_name_lower = node.name.lower().strip()
+                    if node_name_lower == heading_lower:
+                        best_match = node
                         break
+                    # Substring: heading contains the curriculum name or vice versa
+                    if not best_match and (node_name_lower in heading_lower or heading_lower in node_name_lower):
+                        best_match = node
+
+                if best_match:
+                    tags = best_match.path.split(" > ")
+                    db.query(Chunk).filter(Chunk.id == chunk_data["id"]).update({
+                        "topic_id": best_match.id,
+                        "topic_path": best_match.path,
+                        "topic_confirmed": True,
+                    })
+                else:
+                    # No curriculum match — use chunk heading as the tag
+                    tags = [chunk_data["heading"]]
 
                 # Use gallery image id if available, otherwise fall back to inline ref_img
                 gallery_img_id = chunk_first_image.get(chunk_data["id"])
