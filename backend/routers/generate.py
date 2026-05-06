@@ -210,6 +210,27 @@ def start_supplemental(body: SupplementalStartRequest, bg: BackgroundTasks, db: 
         raise HTTPException(500, f"Start supplemental failed: {e}")
 
 
+@router.get("/jobs/active")
+def get_active_jobs(db: Session = Depends(get_db)):
+    """Return any running or pending jobs (for resume polling after page refresh)."""
+    jobs = db.query(GenerationJob).filter(
+        GenerationJob.status.in_([JobStatus.pending, JobStatus.running])
+    ).all()
+    return [
+        {
+            "id": job.id,
+            "job_type": job.job_type,
+            "document_id": job.document_id,
+            "status": job.status,
+            "total_chunks": job.total_chunks,
+            "processed_chunks": job.processed_chunks,
+            "total_cards": job.total_cards,
+            "pipeline_step": job.pipeline_step,
+        }
+        for job in jobs
+    ]
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: int, db: Session = Depends(get_db)):
     job = db.get(GenerationJob, job_id)

@@ -293,6 +293,11 @@ export async function getGenerationJob(jobId: number): Promise<GenerationJob> {
   return res.data;
 }
 
+export async function getActiveJobs(): Promise<GenerationJob[]> {
+  const res = await http.get<GenerationJob[]>('/generate/jobs/active');
+  return res.data;
+}
+
 // ─── Supplemental Generation (Vignettes + Teaching Cases combined) ────────────
 
 export async function estimateSupplemental(params: { card_ids: number[]; model: string }): Promise<SupplementalEstimate> {

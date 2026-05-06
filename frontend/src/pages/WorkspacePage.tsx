@@ -14,6 +14,7 @@ import {
   getRuleSets,
   startGeneration,
   getGenerationJob,
+  getActiveJobs,
   estimateCost,
   confirmDocumentTopics,
   createCurriculumNode,
@@ -1078,6 +1079,17 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
       if (autoPollingRef.current) clearInterval(autoPollingRef.current);
     };
   }, []);
+
+  // Resume polling for active jobs on page load (e.g. after refresh)
+  useEffect(() => {
+    if (autoJobId) return; // already polling
+    getActiveJobs().then((jobs) => {
+      if (jobs.length > 0) {
+        const job = jobs[0]; // resume the first active job
+        startAutoPolling(job.id, job.document_id!);
+      }
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pipelineStepLabel: Record<string, string> = {
     chunking: 'Chunking document...',
