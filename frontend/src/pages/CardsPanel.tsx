@@ -589,11 +589,9 @@ export default function CardsPanel({
   // ── Card list state ────────────────────────────────────────────────────────
   const [cards, setCards] = useState<Card[]>([]);
   const [cardsLoading, setCardsLoading] = useState(false);
-  const allDocCardsRef = useRef<{ docId: number; cards: Card[] } | null>(null);
-
-  // Invalidate the document cache when cards are mutated so the next chunk switch refetches
+  // Invalidate triggers a refetch on next chunk switch
   const invalidateDocCache = useCallback(() => {
-    allDocCardsRef.current = null;
+    // No-op — we now fetch per-chunk directly from API
   }, []);
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -676,23 +674,18 @@ export default function CardsPanel({
       try {
         let rawCards: Card[];
         if (docId != null) {
-          // If we already have all cards for this document, filter client-side
-          if (chunk != null && allDocCardsRef.current?.docId === docId && allDocCardsRef.current.cards.length > 0) {
-            rawCards = allDocCardsRef.current.cards.filter(c => c.chunk_id === chunk);
-            setCards(rawCards);
-            if (!silent) setCardsLoading(false);
-            return;
-          }
-          const resp = await getCards({ document_id: docId, limit: 2000 });
-          rawCards = resp.cards;
-          // Cache the full doc set
-          allDocCardsRef.current = { docId, cards: rawCards };
           if (chunk != null) {
-            rawCards = rawCards.filter(c => c.chunk_id === chunk);
+            // Specific chunk selected — fetch only that chunk's cards
+            const resp = await getCards({ document_id: docId, chunk_id: chunk, limit: 200 });
+            rawCards = resp.cards;
+          } else {
+            // All chunks — fetch first page
+            const resp = await getCards({ document_id: docId, limit: 50 });
+            rawCards = resp.cards;
           }
         } else if (topicPathFilter) {
-          const topicResp = await getCards({ limit: 2000 });
-          rawCards = topicResp.cards.filter(c => c.topic_path && c.topic_path.startsWith(topicPathFilter));
+          const topicResp = await getCards({ tag: topicPathFilter, limit: 50 });
+          rawCards = topicResp.cards;
         } else {
           rawCards = [];
         }
