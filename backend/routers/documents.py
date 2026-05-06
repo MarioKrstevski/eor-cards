@@ -934,7 +934,7 @@ async def upload_document_simple(
     file: UploadFile = File(...),
     model: str = Form(DEFAULT_MODEL),
     rule_set_id: int = Form(...),
-    supplemental_rule_set_id: Optional[int] = Form(None),
+    supplemental_rule_set_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Upload .docx → deterministic split → batched card generation (simplified pipeline)."""
@@ -977,6 +977,9 @@ async def upload_document_simple(
     db.refresh(doc)
     db.refresh(job)
 
+    # Parse supplemental_rule_set_id from string (FormData sends strings)
+    supp_id = int(supplemental_rule_set_id) if supplemental_rule_set_id else None
+
     background_tasks.add_task(
         _run_simple_pipeline,
         doc.id,
@@ -985,7 +988,7 @@ async def upload_document_simple(
         None,
         model,
         rule_set_id,
-        supplemental_rule_set_id,
+        supp_id,
         True,
     )
 
