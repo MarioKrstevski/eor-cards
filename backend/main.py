@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.db import engine, Base
-from backend.routers import documents, cards, generate, curriculum, rules, export, usage, chat, requests
+from backend.routers import documents, cards, generate, curriculum, rules, export, usage, chat, requests, chunk_images
 from backend import models  # noqa
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -50,6 +50,20 @@ def _run_migrations():
 
         # v8 columns — full-auto pipeline step tracking
         _add_col_if_missing(conn, insp, "generation_jobs", "pipeline_step", "VARCHAR(30)")
+
+        # v9 — chunk image gallery
+        if "chunk_images" not in insp.get_table_names():
+            conn.execute(text("""
+                CREATE TABLE chunk_images (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chunk_id INTEGER NOT NULL REFERENCES chunks(id),
+                    data_uri TEXT NOT NULL,
+                    position INTEGER DEFAULT 0,
+                    created_at DATETIME
+                )
+            """))
+            conn.commit()
+        _add_col_if_missing(conn, insp, "cards", "ref_img_id", "INTEGER REFERENCES chunk_images(id)")
 
         # Backfill note_id for existing cards
         cursor = conn.execute(text("SELECT id FROM cards WHERE note_id IS NULL ORDER BY created_at, id"))
@@ -141,6 +155,7 @@ app.include_router(export.router, prefix="/api/export", tags=["export"])
 app.include_router(usage.router, prefix="/api/usage", tags=["usage"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(requests.router, prefix="/api/requests", tags=["requests"])
+app.include_router(chunk_images.router, prefix="/api", tags=["chunk-images"])
 
 @app.post("/api/admin/clear-storage")
 def clear_storage():

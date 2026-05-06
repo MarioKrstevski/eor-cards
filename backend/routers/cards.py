@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload, load_only
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
-from backend.models import Card, CardStatus, Chunk, RuleSet, AIUsageLog
+from backend.models import Card, CardStatus, Chunk, ChunkImage, RuleSet, AIUsageLog
 from backend.services.generator import strip_card_html, regenerate_single_card
 from backend.config import ANTHROPIC_API_KEY, DEFAULT_MODEL, compute_cost
 
@@ -25,12 +25,20 @@ class CardPatch(BaseModel):
     vignette: Optional[str] = None
     teaching_case: Optional[str] = None
     ref_img: Optional[str] = None
+    ref_img_id: Optional[int] = None
     ref_img_position: Optional[str] = None
     status: Optional[CardStatus] = None
     is_reviewed: Optional[bool] = None
 
 
-def card_to_dict(card: Card) -> dict:
+def card_to_dict(card: Card, db: Session | None = None) -> dict:
+    # Resolve ref_img: prefer chunk_images gallery (ref_img_id) over legacy inline data
+    resolved_img = card.ref_img
+    ref_img_id = getattr(card, "ref_img_id", None)
+    if ref_img_id and db:
+        chunk_img = db.get(ChunkImage, ref_img_id)
+        if chunk_img:
+            resolved_img = chunk_img.data_uri
     return {
         "id": card.id,
         "chunk_id": card.chunk_id,
@@ -42,7 +50,8 @@ def card_to_dict(card: Card) -> dict:
         "extra": card.extra,
         "vignette": card.vignette,
         "teaching_case": card.teaching_case,
-        "ref_img": card.ref_img,
+        "ref_img": resolved_img,
+        "ref_img_id": ref_img_id,
         "ref_img_position": card.ref_img_position,
         "source_ref": card.source_ref,
         "note_id": card.note_id,
@@ -91,7 +100,7 @@ def list_cards(
         q = q.order_by(Chunk.topic_path, Card.document_id, Card.card_number)
     total = q.count()
     cards = q.offset(offset).limit(limit).all()
-    return {"cards": [card_to_dict(c) for c in cards], "total": total, "limit": limit, "offset": offset}
+    return {"cards": [card_to_dict(c, db) for c in cards], "total": total, "limit": limit, "offset": offset}
 
 
 @router.patch("/{card_id}")
@@ -110,6 +119,11 @@ def patch_card(card_id: int, body: CardPatch, db: Session = Depends(get_db)):
         card.vignette = body.vignette
     if body.teaching_case is not None:
         card.teaching_case = body.teaching_case
+    if body.ref_img_id is not None:
+        card.ref_img_id = body.ref_img_id if body.ref_img_id != 0 else None
+        # Clear legacy ref_img when using gallery reference
+        if card.ref_img_id:
+            card.ref_img = None
     if body.ref_img is not None:
         card.ref_img = body.ref_img if body.ref_img != "" else None
     if body.ref_img_position is not None:
@@ -120,7 +134,7 @@ def patch_card(card_id: int, body: CardPatch, db: Session = Depends(get_db)):
         card.is_reviewed = body.is_reviewed
     db.commit()
     db.refresh(card)
-    return card_to_dict(card)
+    return card_to_dict(card, db)
 
 
 @router.post("/{card_id}/regenerate")
@@ -162,7 +176,7 @@ def regenerate_card(card_id: int, body: RegenerateCardRequest, db: Session = Dep
         ))
         db.commit()
     db.refresh(card)
-    return card_to_dict(card)
+    return card_to_dict(card, db)
 
 
 @router.post("/{card_id}/reject")
@@ -174,7 +188,7 @@ def reject_card(card_id: int, db: Session = Depends(get_db)):
     card.is_reviewed = True
     db.commit()
     db.refresh(card)
-    return card_to_dict(card)
+    return card_to_dict(card, db)
 
 
 class BulkReviewRequest(BaseModel):

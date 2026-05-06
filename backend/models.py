@@ -57,6 +57,17 @@ class Chunk(Base):
     topic_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")
     cards: Mapped[list["Card"]] = relationship("Card", back_populates="chunk", cascade="all, delete-orphan")
+    images: Mapped[list["ChunkImage"]] = relationship("ChunkImage", back_populates="chunk", cascade="all, delete-orphan")
+
+class ChunkImage(Base):
+    __tablename__ = "chunk_images"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    chunk_id: Mapped[int] = mapped_column(ForeignKey("chunks.id"))
+    data_uri: Mapped[str] = mapped_column(Text)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    chunk: Mapped["Chunk"] = relationship("Chunk", back_populates="images")
+
 
 class CardStatus(str, enum.Enum):
     active = "active"
@@ -75,6 +86,7 @@ class Card(Base):
     vignette: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     teaching_case: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     ref_img: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    ref_img_id: Mapped[Optional[int]] = mapped_column(ForeignKey("chunk_images.id"), nullable=True)
     source_ref: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # e.g., "P3-P5" — paragraph range within chunk
     ref_img_position: Mapped[str] = mapped_column(String(10), default="front")
     note_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=True)

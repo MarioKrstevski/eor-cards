@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db, SessionLocal
-from backend.models import Document, Chunk, Curriculum, AIUsageLog, Card, CardStatus, GenerationJob, JobStatus, RuleSet, utcnow
+from backend.models import Document, Chunk, ChunkImage, Curriculum, AIUsageLog, Card, CardStatus, GenerationJob, JobStatus, RuleSet, utcnow
 from backend.config import DATA_DIR, ANTHROPIC_API_KEY, compute_cost, DEFAULT_MODEL
 from backend.services.chunker import parse_and_chunk_docx, parse_and_chunk_html
 from backend.services.topic_detector import detect_chunk_topics
@@ -465,10 +465,18 @@ def delete_document(doc_id: int, db: Session = Depends(get_db)):
             os.remove(file_path)
     except OSError:
         pass
+    # Fail any active jobs for this document before deleting
+    db.query(GenerationJob).filter(
+        GenerationJob.document_id == doc_id,
+        GenerationJob.status.in_([JobStatus.pending, JobStatus.running])
+    ).update({"status": JobStatus.failed, "error_message": "Document deleted"}, synchronize_session=False)
+    # Nullify document_id on all jobs so CASCADE delete doesn't remove job records
+    db.query(GenerationJob).filter(GenerationJob.document_id == doc_id).update(
+        {"document_id": None}, synchronize_session=False
+    )
     # Delete cards and chunks in batches to avoid timeout on large docs
     db.query(Card).filter(Card.document_id == doc_id).delete(synchronize_session=False)
     db.query(Chunk).filter(Chunk.document_id == doc_id).delete(synchronize_session=False)
-    db.query(GenerationJob).filter(GenerationJob.document_id == doc_id).delete(synchronize_session=False)
     db.delete(doc)
     db.commit()
 

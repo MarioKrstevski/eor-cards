@@ -878,13 +878,16 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   const [pasteError, setPasteError] = useState<string | null>(null);
   const pasteAreaRef = useRef<HTMLDivElement>(null);
 
-  // Full-auto pipeline
+  // Full-auto pipeline (multi-job tracking)
   const [fullAuto, setFullAuto] = useState(false);
   const [autoJobId, setAutoJobId] = useState<number | null>(null);
   const [autoDocId, setAutoDocId] = useState<number | null>(null);
   const [autoPipelineStep, setAutoPipelineStep] = useState<PipelineStep>(null);
   const [autoError, setAutoError] = useState<string | null>(null);
   const autoPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Track active jobs per document: docId -> { jobId, step }
+  const [activeDocJobs, setActiveDocJobs] = useState<Record<number, { jobId: number; step: PipelineStep }>>({});
+  const activeDocJobsPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1031,26 +1034,49 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     }
   }
 
-  // ── Full-auto pipeline polling ──────────────────────────────────────────────
+  // ── Full-auto pipeline polling (multi-job aware) ────────────────────────────
+
+  // Register a job in the activeDocJobs map
+  function registerActiveDocJob(docId: number, jobId: number, step: PipelineStep) {
+    setActiveDocJobs((prev) => ({ ...prev, [docId]: { jobId, step } }));
+  }
+
+  // Remove a job from the activeDocJobs map
+  function unregisterActiveDocJob(docId: number) {
+    setActiveDocJobs((prev) => {
+      const next = { ...prev };
+      delete next[docId];
+      return next;
+    });
+  }
+
   function startAutoPolling(jobId: number, docId: number) {
     setAutoJobId(jobId);
     setAutoDocId(docId);
     setAutoError(null);
     setAutoPipelineStep('chunking');
+    registerActiveDocJob(docId, jobId, 'chunking');
 
-    // Clear any previous polling
+    // Start multi-job polling if not already running (keeps sidebar badges updated for all docs)
+    if (!activeDocJobsPollingRef.current) {
+      startMultiJobPolling([{ id: jobId, document_id: docId, pipeline_step: 'chunking' as PipelineStep }]);
+    }
+
+    // Clear any previous single-doc polling
     if (autoPollingRef.current) clearInterval(autoPollingRef.current);
 
     autoPollingRef.current = setInterval(async () => {
       try {
         const job = await getGenerationJob(jobId);
         setAutoPipelineStep(job.pipeline_step as PipelineStep);
+        registerActiveDocJob(docId, jobId, job.pipeline_step as PipelineStep);
 
         if (job.status === 'done') {
           if (autoPollingRef.current) clearInterval(autoPollingRef.current);
           autoPollingRef.current = null;
           setAutoJobId(null);
           setAutoPipelineStep(null);
+          unregisterActiveDocJob(docId);
           await fetchDocuments();
           refreshCoverage();
           setCardsRefreshKey((k) => k + 1);
@@ -1064,6 +1090,7 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
           autoPollingRef.current = null;
           setAutoJobId(null);
           setAutoPipelineStep(null);
+          unregisterActiveDocJob(docId);
           setAutoError(job.error_message || 'Pipeline failed');
           await fetchDocuments();
         }
@@ -1073,19 +1100,66 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
     }, 2000);
   }
 
+  // Poll ALL active jobs (for multi-doc tracking in sidebar)
+  function startMultiJobPolling(jobs: { id: number; document_id: number; pipeline_step: PipelineStep }[]) {
+    // Register all jobs immediately
+    for (const job of jobs) {
+      if (job.document_id) {
+        registerActiveDocJob(job.document_id, job.id, job.pipeline_step);
+      }
+    }
+
+    // Start a single interval that polls all active doc jobs
+    if (activeDocJobsPollingRef.current) clearInterval(activeDocJobsPollingRef.current);
+    activeDocJobsPollingRef.current = setInterval(async () => {
+      try {
+        const currentJobs = await getActiveJobs();
+        if (currentJobs.length === 0) {
+          if (activeDocJobsPollingRef.current) clearInterval(activeDocJobsPollingRef.current);
+          activeDocJobsPollingRef.current = null;
+          setActiveDocJobs({});
+          await fetchDocuments();
+          refreshCoverage();
+          setCardsRefreshKey((k) => k + 1);
+          refreshUsage();
+          return;
+        }
+        // Update map with current state
+        const newMap: Record<number, { jobId: number; step: PipelineStep }> = {};
+        for (const j of currentJobs) {
+          if (j.document_id) {
+            newMap[j.document_id] = { jobId: j.id, step: j.pipeline_step };
+          }
+        }
+        setActiveDocJobs(newMap);
+      } catch {
+        // polling error — keep trying
+      }
+    }, 3000);
+  }
+
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
       if (autoPollingRef.current) clearInterval(autoPollingRef.current);
+      if (activeDocJobsPollingRef.current) clearInterval(activeDocJobsPollingRef.current);
     };
   }, []);
 
   // Resume polling for active jobs on page load (e.g. after refresh)
   useEffect(() => {
-    if (autoJobId) return; // already polling
+    if (autoJobId) return; // already polling via startAutoPolling
     getActiveJobs().then((jobs) => {
-      if (jobs.length > 0) {
-        const job = jobs[0]; // resume the first active job
+      if (jobs.length === 0) return;
+      if (jobs.length === 1) {
+        // Single job — use the focused polling (updates autoPipelineStep banner)
+        const job = jobs[0];
+        startAutoPolling(job.id, job.document_id!);
+      } else {
+        // Multiple jobs — use multi-job polling for sidebar badges
+        startMultiJobPolling(jobs.map((j) => ({ id: j.id, document_id: j.document_id!, pipeline_step: j.pipeline_step })));
+        // Also focus on the first one for the top banner
+        const job = jobs[0];
         startAutoPolling(job.id, job.document_id!);
       }
     }).catch(() => {});
@@ -2025,13 +2099,13 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
                               <p className="text-[10px] text-gray-400 mt-0.5">
                                 {doc.filename.startsWith('paste_') ? 'Paste' : 'Doc'} · {new Date(doc.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                               </p>
-                              {autoDocId === doc.id && autoPipelineStep && autoPipelineStep !== 'done' && (
+                              {activeDocJobs[doc.id] && activeDocJobs[doc.id].step && activeDocJobs[doc.id].step !== 'done' && (
                                 <p className="text-[10px] text-blue-600 mt-0.5 flex items-center gap-1">
                                   <svg className="animate-spin h-2.5 w-2.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                                   </svg>
-                                  {pipelineStepLabel[autoPipelineStep] || autoPipelineStep}
+                                  {pipelineStepLabel[activeDocJobs[doc.id].step!] || activeDocJobs[doc.id].step}
                                 </p>
                               )}
                             </div>
