@@ -881,7 +881,6 @@ export default function WorkspacePage({ refreshUsage }: WorkspacePageProps) {
   // Full-auto pipeline (multi-job tracking)
   const [fullAuto, setFullAuto] = useState(false);
   const [autoJobId, setAutoJobId] = useState<number | null>(null);
-  const [autoDocId, setAutoDocId] = useState<number | null>(null);
   const [autoPipelineStep, setAutoPipelineStep] = useState<PipelineStep>(null);
   const [autoError, setAutoError] = useState<string | null>(null);
   const autoPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
